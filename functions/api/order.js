@@ -1,7 +1,3 @@
-// 全局内存存储（Pages 实例内共享）
-const orders = new Map();
-let tokenCache = null;
-
 export async function onRequest(context) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -23,9 +19,11 @@ export async function onRequest(context) {
     sid: '24085'
   };
 
-  const MAX_RELEASES = 5; // 最大释放次数
+  const MAX_RELEASES = 5;
+  const kv = env.ORDERS; // 使用 KV 存储
 
   // 获取 token（缓存 1 小时）
+  let tokenCache = await kv.get('__token_cache__', { type: 'json' });
   if (!tokenCache || Date.now() > tokenCache.expire) {
     const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
     const loginData = await loginResp.json();
@@ -34,6 +32,7 @@ export async function onRequest(context) {
         value: loginData.token || loginData.Token || loginData.access_token,
         expire: Date.now() + 3500000
       };
+      await kv.put('__token_cache__', JSON.stringify(tokenCache));
     } else {
       return jsonResponse({ error: '登录失败' }, 500);
     }
@@ -42,30 +41,35 @@ export async function onRequest(context) {
   try {
     switch (action) {
       case 'status': {
-        const order = orders.get(oid);
+        let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ status: 'new', phone: null, expire: null, code: null, releaseCount: 0 });
         if (order.status === 'active' && Date.now() >= order.expire) {
           order.status = 'expired';
+          await kv.put(oid, JSON.stringify(order));
         }
         return jsonResponse(order);
       }
 
       case 'getPhone': {
-        let order = orders.get(oid);
+        let order = await kv.get(oid, { type: 'json' });
 
         // 订单已完成，不允许获取
         if (order && order.status === 'done') {
           return jsonResponse({ error: '订单已完成，无法获取手机号' }, 403);
         }
 
-        // 订单已作废（超过释放次数），不允许获取
+        // 订单已作废
         if (order && order.status === 'invalid') {
           return jsonResponse({ error: '订单已作废（超过释放次数限制），请联系卖家重新下单' }, 403);
         }
 
         // 已有活跃订单且未过期，直接返回已有手机号
         if (order && order.status === 'active' && Date.now() < order.expire) {
-          return jsonResponse({ phone: order.phone, expire: order.expire, releaseCount: order.releaseCount || 0 });
+          return jsonResponse({ 
+            phone: order.phone, 
+            expire: order.expire, 
+            releaseCount: order.releaseCount || 0 
+          });
         }
 
         // 如果订单已过期，自动释放旧号
@@ -83,27 +87,29 @@ export async function onRequest(context) {
             expire: Date.now() + 300 * 1000,
             status: 'active',
             code: null,
-            releaseCount: order ? (order.releaseCount || 0) : 0 // 保留之前的释放次数
+            releaseCount: order ? (order.releaseCount || 0) : 0
           };
-          orders.set(oid, order);
-          return jsonResponse({ phone, expire: order.expire, releaseCount: order.releaseCount });
+          await kv.put(oid, JSON.stringify(order));
+          return jsonResponse({ 
+            phone, 
+            expire: order.expire, 
+            releaseCount: order.releaseCount 
+          });
         }
         return jsonResponse({ error: phoneData.msg || '取号失败' }, 500);
       }
 
       case 'release': {
-        let order = orders.get(oid);
+        let order = await kv.get(oid, { type: 'json' });
         
         if (!order) {
           return jsonResponse({ error: '订单不存在' }, 404);
         }
 
-        // 订单已完成，不允许释放
         if (order.status === 'done') {
           return jsonResponse({ error: '订单已完成，无法释放' }, 403);
         }
 
-        // 订单已作废，不允许释放
         if (order.status === 'invalid') {
           return jsonResponse({ error: '订单已作废，无法释放' }, 403);
         }
@@ -123,7 +129,7 @@ export async function onRequest(context) {
           order.expire = null;
           order.code = null;
           order.releaseCount = currentCount;
-          orders.set(oid, order);
+          await kv.put(oid, JSON.stringify(order));
           return jsonResponse({ 
             error: `已达到最大释放次数（${MAX_RELEASES}次），订单已作废`, 
             releaseCount: currentCount,
@@ -131,12 +137,12 @@ export async function onRequest(context) {
           }, 403);
         }
 
-        // 更新订单（清空手机号，允许重新获取）
+        // 更新订单
         order.phone = null;
         order.expire = null;
         order.code = null;
         order.releaseCount = currentCount;
-        orders.set(oid, order);
+        await kv.put(oid, JSON.stringify(order));
         
         return jsonResponse({ 
           success: true, 
@@ -146,7 +152,7 @@ export async function onRequest(context) {
       }
 
       case 'getSMS': {
-        const order = orders.get(oid);
+        const order = await kv.get(oid, { type: 'json' });
         if (!order || !order.phone) return jsonResponse({ error: '订单不存在' }, 404);
         const smsResp = await fetch(`https://${HAOZHU.server}/sms/?api=getMessage&token=${tokenCache.value}&sid=${HAOZHU.sid}&phone=${order.phone}`);
         const smsData = await smsResp.json();
@@ -155,6 +161,7 @@ export async function onRequest(context) {
           if (code) {
             order.code = code;
             order.status = 'done';
+            await kv.put(oid, JSON.stringify(order));
             return jsonResponse({ code, status: 'done' });
           }
         }
