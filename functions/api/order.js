@@ -3,6 +3,7 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const action = url.searchParams.get('action');
   const oid = url.searchParams.get('oid');
+  const sid = url.searchParams.get('sid') || '24085'; // 从请求获取项目ID
 
   if (!oid) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
@@ -12,12 +13,11 @@ export async function onRequest(context) {
     server: 'api.haozhuma.com',
     user: '0d1f0214da0eecc58ba00012056abf8cffbd15763117141296ddc0b5ca9adc7c',
     pass: '4e32e4470173719e9935172c58c31548284d9b1341fe201f5921060810d0571c',
-    sid: '24085'
+    sid: sid
   };
 
   const kv = env.ORDERS;
 
-  // 获取 token
   let tokenStr = await kv.get('__token__');
   if (!tokenStr) {
     const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
@@ -44,33 +44,18 @@ export async function onRequest(context) {
 
       case 'getPhone': {
         let order = await kv.get(oid, { type: 'json' });
-
-        // 订单已完成，不允许获取
-        if (order && order.status === 'done') {
-          return jsonResponse({ error: '订单已完成，无法获取手机号' }, 403);
-        }
-
-        // 已有活跃订单且未过期，直接返回已有手机号
+        if (order && order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
         if (order && order.status === 'active' && Date.now() < order.expire) {
           return jsonResponse({ phone: order.phone, expire: order.expire });
         }
-
-        // 如果订单已过期，自动释放旧号
         if (order && order.phone) {
           try { await fetch(`https://${HAOZHU.server}/sms/?api=releasePhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`); } catch(e) {}
         }
-
-        // 获取新手机号
         const phoneResp = await fetch(`https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}`);
         const phoneData = await phoneResp.json();
         if (phoneData.code === 0 || phoneData.code === '0') {
           const phone = phoneData.phone || phoneData.Phone || phoneData.mobile;
-          const newOrder = {
-            phone,
-            expire: Date.now() + 300 * 1000,
-            status: 'active',
-            code: null
-          };
+          const newOrder = { phone, expire: Date.now() + 300 * 1000, status: 'active', code: null };
           await kv.put(oid, JSON.stringify(newOrder));
           return jsonResponse({ phone, expire: newOrder.expire });
         }
@@ -79,21 +64,15 @@ export async function onRequest(context) {
 
       case 'release': {
         let order = await kv.get(oid, { type: 'json' });
-
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
-        if (order.status === 'done') return jsonResponse({ error: '订单已完成，无法释放' }, 403);
-
-        // 释放旧手机号
+        if (order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
         if (order.phone) {
           try { await fetch(`https://${HAOZHU.server}/sms/?api=releasePhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`); } catch(e) {}
         }
-
-        // 清空订单（允许重新获取）
         order.phone = null;
         order.expire = null;
         order.code = null;
         await kv.put(oid, JSON.stringify(order));
-
         return jsonResponse({ success: true });
       }
 
