@@ -55,7 +55,7 @@ export async function onRequest(context) {
         const phoneData = await phoneResp.json();
         if (phoneData.code === 0 || phoneData.code === '0') {
           const phone = phoneData.phone || phoneData.Phone || phoneData.mobile;
-          const newOrder = { phone, expire: Date.now() + 60 * 1000, status: 'active', code: null }; // ✅ 改为 60 秒
+          const newOrder = { phone, expire: Date.now() + 60 * 1000, status: 'active', code: null }; // 60 秒过期
           await kv.put(oid, JSON.stringify(newOrder));
           return jsonResponse({ phone, expire: newOrder.expire });
         }
@@ -93,19 +93,19 @@ export async function onRequest(context) {
         return jsonResponse({ code: null, status: 'active' });
       }
 
-      // 如果您需要使用 setPhone 接口（管理面板指定手机号），请取消以下注释：
-      // case 'setPhone': {
-      //   const phone = url.searchParams.get('phone');
-      //   if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
-      //   const order = {
-      //     phone,
-      //     expire: Date.now() + 60 * 1000, // 同样 60 秒
-      //     status: 'active',
-      //     code: null
-      //   };
-      //   await kv.put(oid, JSON.stringify(order));
-      //   return jsonResponse({ success: true, phone, expire: order.expire });
-      // }
+      // ✅ setPhone 接口已启用
+      case 'setPhone': {
+        const phone = url.searchParams.get('phone');
+        if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
+        const order = {
+          phone,
+          expire: Date.now() + 60 * 1000, // 60 秒过期
+          status: 'active',
+          code: null
+        };
+        await kv.put(oid, JSON.stringify(order));
+        return jsonResponse({ success: true, phone, expire: order.expire });
+      }
 
       default:
         return jsonResponse({ error: '未知操作' }, 400);
