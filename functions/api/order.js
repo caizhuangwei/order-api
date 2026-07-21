@@ -60,7 +60,7 @@ export async function onRequest(context) {
           if (p.status === 'in_use' && p.oid) {
             let order = await kv.get(p.oid, { type: 'json' });
             if (order && order.status === 'active') {
-              order.status = 'released';
+              order.status = 'released';  // 管理员强制释放，买家不可再获取
               order.phone = null;
               order.expire = null;
               await kv.put(p.oid, JSON.stringify(order));
@@ -81,7 +81,7 @@ export async function onRequest(context) {
         if (entry.oid) {
           let order = await kv.get(entry.oid, { type: 'json' });
           if (order && order.status === 'active') {
-            order.status = 'released';
+            order.status = 'released';  // 管理员强制释放
             order.phone = null;
             order.expire = null;
             await kv.put(entry.oid, JSON.stringify(order));
@@ -111,7 +111,7 @@ export async function onRequest(context) {
       case 'getPhone': {
         let order = await kv.get(oid, { type: 'json' });
         if (order && order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
-        if (order && order.status === 'released') return jsonResponse({ error: '订单已被释放' }, 403);
+        if (order && order.status === 'released') return jsonResponse({ error: '订单已被管理员释放，请联系卖家' }, 403);
         if (order && order.status === 'active' && order.expire && Date.now() < order.expire) {
           return jsonResponse({ phone: order.phone, expire: order.expire });
         }
@@ -149,6 +149,7 @@ export async function onRequest(context) {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
         if (order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
+
         if (order.phone && order.fromPool) {
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
@@ -156,7 +157,9 @@ export async function onRequest(context) {
         } else if (order.phone) {
           try { await fetch(`https://${HAOZHU.server}/sms/?api=releasePhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`); } catch(e) {}
         }
-        order.status = 'released'; order.phone = null; order.expire = null; order.code = null;
+        // 买家释放 -> 状态变为 new，可重新获取
+        order.status = 'new';
+        order.phone = null; order.expire = null; order.code = null;
         await kv.put(oid, JSON.stringify(order));
         return jsonResponse({ success: true });
       }
