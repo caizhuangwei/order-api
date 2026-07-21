@@ -22,30 +22,20 @@ export async function onRequest(context) {
   async function getPool() { const pool = await kv.get(POOL_KEY, { type: 'json' }); return pool || []; }
   async function savePool(pool) { await kv.put(POOL_KEY, JSON.stringify(pool)); }
 
-  // ---------- 豪猪 token 管理 ----------
-  let tokenStr = await kv.get('__token__');
+  // ====== token 缓存（全局变量） ======
+  let tokenStr = null;
   let tokenExpiry = 0;
-  if (tokenStr) {
-    // token 直接存储为字符串，无过期标记，我们统一按 3500 秒有效，通过缓存键判断
-    // 我们改为存储对象 { token, expire }，兼容旧版
-    try {
-      const cache = JSON.parse(tokenStr);
-      if (cache.token && cache.expire && Date.now() < cache.expire) {
-        tokenStr = cache.token;
-        tokenExpiry = cache.expire;
-      } else {
-        tokenStr = null; // 过期，重新登录
-      }
-    } catch (e) {
-      // 旧版纯字符串 token，假定有效
-      tokenExpiry = Date.now() + 3500000;
-    }
-  }
 
-  if (!tokenStr) {
+  // 尝试从 KV 读取缓存的 token
+  const cachedToken = await kv.get('__token__', { type: 'json' });
+  if (cachedToken && cachedToken.token && cachedToken.expire && Date.now() < cachedToken.expire) {
+    tokenStr = cachedToken.token;
+    tokenExpiry = cachedToken.expire;
+  } else {
+    // 登录获取新 token
     const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
     const loginData = await loginResp.json();
-    if (loginData.code === 0 || loginData.code === '0') {
+    if (loginData.code == 0) {
       tokenStr = loginData.token || loginData.Token || loginData.access_token;
       tokenExpiry = Date.now() + 3500000;
       await kv.put('__token__', JSON.stringify({ token: tokenStr, expire: tokenExpiry }), { expirationTtl: 3500 });
@@ -54,10 +44,23 @@ export async function onRequest(context) {
     }
   }
 
+  // ====== 辅助：刷新 token ======
+  async function refreshToken() {
+    const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
+    const loginData = await loginResp.json();
+    if (loginData.code == 0) {
+      tokenStr = loginData.token || loginData.Token || loginData.access_token;
+      tokenExpiry = Date.now() + 3500000;
+      await kv.put('__token__', JSON.stringify({ token: tokenStr, expire: tokenExpiry }), { expirationTtl: 3500 });
+      return tokenStr;
+    }
+    return null;
+  }
+
   try {
     switch (action) {
 
-      // ========== 号码池管理 ==========
+      // ========== 号码池管理（管理员） ==========
       case 'poolList': { const pool = await getPool(); return jsonResponse({ pool }); }
       case 'addPhone': {
         const phone = url.searchParams.get('phone');
@@ -129,7 +132,7 @@ export async function onRequest(context) {
         return jsonResponse(order);
       }
 
-      // ========== 获取手机号 ==========
+      // ========== 获取手机号（池优先，池空调用豪猪） ==========
       case 'getPhone': {
         let order = await kv.get(oid, { type: 'json' });
         if (order && order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
@@ -148,7 +151,7 @@ export async function onRequest(context) {
           }
         }
 
-        // 从池中获取
+        // 1. 从池中取号
         let pool = await getPool();
         const available = pool.filter(p => p.status === 'available');
         if (available.length > 0) {
@@ -162,10 +165,10 @@ export async function onRequest(context) {
           return jsonResponse({ phone, expire });
         }
 
-        // 调用豪猪
+        // 2. 调用豪猪
         const phoneResp = await fetch(`https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}`);
         const phoneData = await phoneResp.json();
-        if (phoneData.code === 0 || phoneData.code === '0') {
+        if (phoneData.code == 0) {
           const phone = phoneData.phone || phoneData.Phone || phoneData.mobile;
           const newOrder = { phone, expire: Date.now() + 60 * 1000, status: 'active', code: null, fromPool: false };
           await kv.put(oid, JSON.stringify(newOrder));
@@ -174,7 +177,7 @@ export async function onRequest(context) {
         return jsonResponse({ error: phoneData.msg || '取号失败' }, 500);
       }
 
-      // ========== 买家释放 ==========
+      // ========== 买家释放（状态变为 new） ==========
       case 'release': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
@@ -191,29 +194,23 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== 获取验证码（增强版） ==========
+      // ========== 获取验证码（核心修复） ==========
       case 'getSMS': {
         const order = await kv.get(oid, { type: 'json' });
         if (!order || !order.phone) return jsonResponse({ error: '订单不存在' }, 404);
 
-        // 刷新 token（确保未过期）
+        // 提前刷新 token
         if (Date.now() > tokenExpiry - 60000) {
-          const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
-          const loginData = await loginResp.json();
-          if (loginData.code === 0 || loginData.code === '0') {
-            tokenStr = loginData.token || loginData.Token || loginData.access_token;
-            tokenExpiry = Date.now() + 3500000;
-            await kv.put('__token__', JSON.stringify({ token: tokenStr, expire: tokenExpiry }), { expirationTtl: 3500 });
-          }
+          const newToken = await refreshToken();
+          if (!newToken) return jsonResponse({ error: 'token 刷新失败' }, 500);
         }
 
         const smsUrl = `https://${HAOZHU.server}/sms/?api=getMessage&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`;
         const smsResp = await fetch(smsUrl);
         const smsData = await smsResp.json();
 
-        console.log('getSMS raw:', JSON.stringify(smsData)); // 可在 Cloudflare 日志查看
+        console.log('getSMS raw:', JSON.stringify(smsData));
 
-        // 兼容 code 为数字 0 或字符串 "0"
         if (smsData.code == 0) {
           const raw = smsData.sms || smsData.Sms || smsData.message || smsData.code_text || '';
           if (raw) {
@@ -229,7 +226,7 @@ export async function onRequest(context) {
         return jsonResponse({ code: null, status: 'active' });
       }
 
-      // ========== 手动指定手机号 ==========
+      // ========== 管理员手动指定手机号 ==========
       case 'setPhone': {
         const phone = url.searchParams.get('phone');
         if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
