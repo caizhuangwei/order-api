@@ -161,35 +161,17 @@ export async function onRequest(context) {
           const phone = chosen.phone;
           const expire = Date.now() + 60 * 1000;
 
-          // ✅ 激活豪猪平台上的指定号码（尝试两个可能的接口）
-          let activated = false;
-          // 方法1：调用 getPhone 并传 phone 参数
+          // ✅ 激活豪猪平台上的指定号码
+          let activateResult = null;
           try {
-            const url1 = `https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
-            console.log('[指定号码] 尝试接口1:', url1);
-            const r1 = await fetch(url1);
-            const d1 = await r1.json();
-            console.log('[指定号码] 接口1返回:', JSON.stringify(d1));
-            if (d1.code == 0) activated = true;
+            const activateUrl = `https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
+            console.log('[指定号码] 尝试激活:', activateUrl);
+            const r = await fetch(activateUrl);
+            activateResult = await r.json();
+            console.log('[指定号码] 激活结果:', JSON.stringify(activateResult));
           } catch (e) {
-            console.log('[指定号码] 接口1异常:', e.message);
-          }
-          // 如果方法1失败，尝试方法2：getAgainNmuber
-          if (!activated) {
-            try {
-              const url2 = `https://${HAOZHU.server}/sms/?api=getAgainNmuber&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
-              console.log('[指定号码] 尝试接口2:', url2);
-              const r2 = await fetch(url2);
-              const d2 = await r2.json();
-              console.log('[指定号码] 接口2返回:', JSON.stringify(d2));
-              if (d2.code == 0) activated = true;
-            } catch (e) {
-              console.log('[指定号码] 接口2异常:', e.message);
-            }
-          }
-          // 如果都失败，记录日志但不中断流程（允许后续轮询 getSMS 继续工作）
-          if (!activated) {
-            console.log('[指定号码] 所有激活尝试失败，但仍继续分配号码');
+            console.log('[指定号码] 激活异常:', e.message);
+            activateResult = { error: e.message };
           }
 
           // 更新池状态
@@ -203,11 +185,13 @@ export async function onRequest(context) {
             expire,
             status: 'active',
             code: null,
-            fromPool: true
+            fromPool: true,
+            activateResult  // 存储激活结果，方便调试
           };
           await kv.put(oid, JSON.stringify(newOrder));
           await addLog(phone, oid, 'assigned');
-          return jsonResponse({ phone, expire });
+          // 返回给前端，同时携带激活结果
+          return jsonResponse({ phone, expire, activateResult });
         }
 
         // 2. 池空则调用豪猪获取新号
