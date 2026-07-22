@@ -277,4 +277,3 @@ function jsonResponse(obj, status = 200) {
     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
   });
 }
-添加查询余额的功能就可以了，其他不做修改
