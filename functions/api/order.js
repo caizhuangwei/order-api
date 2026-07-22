@@ -115,7 +115,6 @@ export async function onRequest(context) {
       case 'status': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ status: 'new', phone: null, expire: null, code: null });
-        // 超时自动回收池号码
         if (order.expire && order.status === 'active' && Date.now() >= order.expire) {
           if (order.fromPool && order.phone) {
             let pool = await getPool();
@@ -131,14 +130,13 @@ export async function onRequest(context) {
         return jsonResponse(order);
       }
 
-      // ========== 获取手机号（池优先，池空调豪猪） ==========
+      // ========== 获取手机号（池优先） ==========
       case 'getPhone': {
         let order = await kv.get(oid, { type: 'json' });
 
         if (order && order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
         if (order && order.status === 'released') return jsonResponse({ error: '订单已被管理员释放' }, 403);
 
-        // 已有活跃订单，直接返回
         if (order && order.status === 'active' && order.expire && Date.now() < order.expire) {
           return jsonResponse({ phone: order.phone, expire: order.expire });
         }
@@ -204,7 +202,7 @@ export async function onRequest(context) {
         if (order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
 
         if (order.phone && order.fromPool) {
-          // 池号码：放回池中，不调用豪猪释放
+          // 池号码放回池中
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
           if (entry) {
@@ -215,7 +213,7 @@ export async function onRequest(context) {
           }
           await addLog(order.phone, oid, 'released');
         } else if (order.phone) {
-          // 非池号码（豪猪随机取的）：调用豪猪释放
+          // 非池号码调用豪猪释放
           try { await fetch(`https://${HAOZHU.server}/sms/?api=releasePhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`); } catch(e) {}
           await addLog(order.phone, oid, 'released');
         }
