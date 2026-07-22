@@ -35,7 +35,7 @@ export async function onRequest(context) {
     await saveLogs(logs);
   }
 
-  // ========== 豪猪 token 管理（带自动刷新） ==========
+  // ========== 豪猪 token 管理 ==========
   let tokenData = await kv.get('__token_data__', { type: 'json' });
   let tokenStr = tokenData ? tokenData.token : null;
   let tokenExpiry = tokenData ? tokenData.expire : 0;
@@ -54,7 +54,7 @@ export async function onRequest(context) {
 
   try {
     switch (action) {
-      // ========== 号码池管理 ==========
+      // ========== 号码池管理 (不变) ==========
       case 'poolList': { const pool = await getPool(); return jsonResponse({ pool }); }
       case 'addPhone': {
         const phone = url.searchParams.get('phone');
@@ -143,7 +143,7 @@ export async function onRequest(context) {
           return jsonResponse({ phone: order.phone, expire: order.expire });
         }
 
-        // 释放旧池号码（如果有）
+        // 释放旧池号码
         if (order && order.phone && order.fromPool) {
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
@@ -161,17 +161,36 @@ export async function onRequest(context) {
           const phone = chosen.phone;
           const expire = Date.now() + 60 * 1000;
 
-          // ✅ 通知豪猪使用该号码：调用 getPhone 并传递 phone 参数
+          // ✅ 关键步骤：激活豪猪平台上的指定号码
+          // 尝试两种可能的接口：getPhone?phone= 和 getAgainNmuber?phone=
+          let activated = false;
+          // 方法1：调用 getPhone 并传 phone 参数
           try {
-            const activateUrl = `https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
-            const activateResp = await fetch(activateUrl);
-            const activateData = await activateResp.json();
-            // 如果豪猪返回成功，继续；否则记录日志
-            if (activateData.code !== 0 && activateData.code !== '0') {
-              console.log('指定号码激活失败:', JSON.stringify(activateData));
-            }
+            const url1 = `https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
+            console.log('[指定号码] 尝试接口1:', url1);
+            const r1 = await fetch(url1);
+            const d1 = await r1.json();
+            console.log('[指定号码] 接口1返回:', JSON.stringify(d1));
+            if (d1.code == 0) activated = true;
           } catch (e) {
-            console.log('指定号码请求异常:', e.message);
+            console.log('[指定号码] 接口1异常:', e.message);
+          }
+          // 如果方法1失败，尝试方法2：getAgainNmuber
+          if (!activated) {
+            try {
+              const url2 = `https://${HAOZHU.server}/sms/?api=getAgainNmuber&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
+              console.log('[指定号码] 尝试接口2:', url2);
+              const r2 = await fetch(url2);
+              const d2 = await r2.json();
+              console.log('[指定号码] 接口2返回:', JSON.stringify(d2));
+              if (d2.code == 0) activated = true;
+            } catch (e) {
+              console.log('[指定号码] 接口2异常:', e.message);
+            }
+          }
+          // 如果都失败，记录日志但不中断流程（允许后续轮询 getSMS 继续工作）
+          if (!activated) {
+            console.log('[指定号码] 所有激活尝试失败，但仍继续分配号码');
           }
 
           // 更新池状态
@@ -211,7 +230,7 @@ export async function onRequest(context) {
         return jsonResponse({ error: phoneData.msg || '取号失败' }, 500);
       }
 
-      // ========== 释放 ==========
+      // ========== 释放（保持不变） ==========
       case 'release': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
@@ -232,7 +251,7 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== 获取验证码 ==========
+      // ========== 获取验证码（不变） ==========
       case 'getSMS': {
         const order = await kv.get(oid, { type: 'json' });
         if (!order || !order.phone) return jsonResponse({ error: '订单不存在或无手机号' }, 404);
