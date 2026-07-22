@@ -161,19 +161,24 @@ export async function onRequest(context) {
           const phone = chosen.phone;
           const expire = Date.now() + 60 * 1000;
 
+          // ✅ 通知豪猪使用该号码：调用 getPhone 并传递 phone 参数
+          try {
+            const activateUrl = `https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
+            const activateResp = await fetch(activateUrl);
+            const activateData = await activateResp.json();
+            // 如果豪猪返回成功，继续；否则记录日志
+            if (activateData.code !== 0 && activateData.code !== '0') {
+              console.log('指定号码激活失败:', JSON.stringify(activateData));
+            }
+          } catch (e) {
+            console.log('指定号码请求异常:', e.message);
+          }
+
+          // 更新池状态
           chosen.status = 'in_use';
           chosen.oid = oid;
           chosen.expire = expire;
           await savePool(pool);
-
-          // ✅ 调用豪猪重新激活号码（指定号码），使豪猪知道该号码即将接收短信
-          try {
-            const activateUrl = `https://${HAOZHU.server}/sms/?api=getAgainNmuber&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
-            await fetch(activateUrl);
-            // 激活请求即使失败也不影响后续流程（可能接口名称不同，可根据日志调整）
-          } catch (e) {
-            console.log('激活号码请求失败（可忽略）:', e.message);
-          }
 
           const newOrder = {
             phone,
