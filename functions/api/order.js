@@ -5,7 +5,7 @@ export async function onRequest(context) {
   const oid = url.searchParams.get('oid');
   const sid = url.searchParams.get('sid') || '24085';
 
-  const poolActions = ['addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList'];
+  const poolActions = ['addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList', 'getBalance'];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
   }
@@ -54,6 +54,16 @@ export async function onRequest(context) {
 
   try {
     switch (action) {
+
+      // ========== 查询余额 ==========
+      case 'getBalance': {
+        const balanceResp = await fetch(`https://${HAOZHU.server}/sms/?api=getSummary&token=${tokenStr}`);
+        const balanceData = await balanceResp.json();
+        if (balanceData.code == 0) {
+          return jsonResponse({ balance: balanceData.balance || balanceData.summary || '未知' });
+        }
+        return jsonResponse({ error: balanceData.msg || '查询失败' });
+      }
 
       // ========== 号码池管理 ==========
       case 'poolList': { const pool = await getPool(); return jsonResponse({ pool }); }
