@@ -29,10 +29,10 @@ export async function onRequest(context) {
     if (logs.length > 100) logs = logs.slice(-100);
     await kv.put(LOG_KEY, JSON.stringify(logs));
   }
-  async function addLog(phone, oid, action) {
-    if (action !== 'sms_received') return; // 仅记录收到验证码
+  // 仅记录收到验证码的号码
+  async function addLog(phone, oid) {
     const logs = await getLogs();
-    logs.push({ phone, oid, action, time: new Date().toISOString() });
+    logs.push({ phone, oid, time: new Date().toISOString() });
     await saveLogs(logs);
   }
 
@@ -142,7 +142,7 @@ export async function onRequest(context) {
           return jsonResponse({ phone: order.phone, expire: order.expire });
         }
 
-        // 释放旧池号码
+        // 释放旧池号码（如果有）
         if (order && order.phone && order.fromPool) {
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
@@ -160,7 +160,7 @@ export async function onRequest(context) {
           const phone = chosen.phone;
           const expire = Date.now() + 60 * 1000;
 
-          // ✅ 调用豪猪指定号码接口激活
+          // 调用豪猪指定号码激活
           try {
             const activateUrl = `https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
             await fetch(activateUrl);
@@ -207,7 +207,7 @@ export async function onRequest(context) {
         if (order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
 
         if (order.phone && order.fromPool) {
-          // 放回池中，不调豪猪释放（池号码是您自己的）
+          // 放回池中
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
           if (entry) {
@@ -217,16 +217,12 @@ export async function onRequest(context) {
             await savePool(pool);
           }
         } else if (order.phone) {
-          // 豪猪随机取的号，调用 cancelRecv 释放
           try {
             await fetch(`https://${HAOZHU.server}/sms/?api=cancelRecv&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`);
           } catch(e) {}
         }
 
-        order.status = 'new';
-        order.phone = null;
-        order.expire = null;
-        order.code = null;
+        order.status = 'new'; order.phone = null; order.expire = null; order.code = null;
         await kv.put(oid, JSON.stringify(order));
         return jsonResponse({ success: true });
       }
@@ -247,7 +243,15 @@ export async function onRequest(context) {
               order.code = raw;
               order.status = 'done';
               await kv.put(oid, JSON.stringify(order));
-              await addLog(order.phone, oid, 'sms_received');
+
+              // ✅ 关键修改：如果号码来自号码池，则从池中彻底删除，并记录日志
+              if (order.fromPool && order.phone) {
+                let pool = await getPool();
+                pool = pool.filter(p => p.phone !== order.phone); // 删除该号码
+                await savePool(pool);
+                await addLog(order.phone, oid); // 记录到使用记录
+              }
+
               return jsonResponse({ code: raw, status: 'done' });
             }
           }
