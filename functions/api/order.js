@@ -54,7 +54,7 @@ export async function onRequest(context) {
 
   try {
     switch (action) {
-      // ========== 号码池管理 (不变) ==========
+      // ========== 号码池管理 ==========
       case 'poolList': { const pool = await getPool(); return jsonResponse({ pool }); }
       case 'addPhone': {
         const phone = url.searchParams.get('phone');
@@ -165,12 +165,11 @@ export async function onRequest(context) {
           let activateResult = null;
           try {
             const activateUrl = `https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
-            console.log('[指定号码] 尝试激活:', activateUrl);
             const r = await fetch(activateUrl);
             activateResult = await r.json();
-            console.log('[指定号码] 激活结果:', JSON.stringify(activateResult));
+            console.log('激活结果:', JSON.stringify(activateResult));
           } catch (e) {
-            console.log('[指定号码] 激活异常:', e.message);
+            console.log('激活异常:', e.message);
             activateResult = { error: e.message };
           }
 
@@ -186,11 +185,10 @@ export async function onRequest(context) {
             status: 'active',
             code: null,
             fromPool: true,
-            activateResult  // 存储激活结果，方便调试
+            activateResult
           };
           await kv.put(oid, JSON.stringify(newOrder));
           await addLog(phone, oid, 'assigned');
-          // 返回给前端，同时携带激活结果
           return jsonResponse({ phone, expire, activateResult });
         }
 
@@ -213,7 +211,7 @@ export async function onRequest(context) {
         return jsonResponse({ error: phoneData.msg || '取号失败' }, 500);
       }
 
-      // ========== 释放（保持不变） ==========
+      // ========== 释放 ==========
       case 'release': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
@@ -234,7 +232,7 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== 获取验证码（不变） ==========
+      // ========== 获取验证码 ==========
       case 'getSMS': {
         const order = await kv.get(oid, { type: 'json' });
         if (!order || !order.phone) return jsonResponse({ error: '订单不存在或无手机号' }, 404);
