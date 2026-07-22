@@ -5,7 +5,6 @@ export async function onRequest(context) {
   const oid = url.searchParams.get('oid');
   const sid = url.searchParams.get('sid') || '24085';
 
-  // 池管理接口不需要 oid
   const poolActions = ['addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone'];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
@@ -21,11 +20,9 @@ export async function onRequest(context) {
   const kv = env.ORDERS;
   const POOL_KEY = 'phone_pool';
 
-  // 号码池读写工具
   async function getPool() { const p = await kv.get(POOL_KEY, { type: 'json' }); return p || []; }
   async function savePool(pool) { await kv.put(POOL_KEY, JSON.stringify(pool)); }
 
-  // token 管理
   let tokenStr = await kv.get('__token__');
   if (!tokenStr) {
     const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
@@ -40,10 +37,8 @@ export async function onRequest(context) {
 
   try {
     switch (action) {
-
       // ========== 号码池管理 ==========
       case 'poolList': { const pool = await getPool(); return jsonResponse({ pool }); }
-
       case 'addPhone': {
         const phone = url.searchParams.get('phone');
         if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
@@ -53,7 +48,6 @@ export async function onRequest(context) {
         await savePool(pool);
         return jsonResponse({ success: true });
       }
-
       case 'removePhone': {
         const phone = url.searchParams.get('phone');
         if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
@@ -62,7 +56,6 @@ export async function onRequest(context) {
         await savePool(pool);
         return jsonResponse({ success: true });
       }
-
       case 'resetPool': {
         let pool = await getPool();
         for (const p of pool) {
@@ -78,7 +71,6 @@ export async function onRequest(context) {
         await savePool(pool);
         return jsonResponse({ success: true });
       }
-
       case 'releasePoolPhone': {
         const phone = url.searchParams.get('phone');
         if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
@@ -126,7 +118,6 @@ export async function onRequest(context) {
           return jsonResponse({ phone: order.phone, expire: order.expire });
         }
 
-        // 释放旧池号码
         if (order && order.phone && order.fromPool) {
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
@@ -136,7 +127,6 @@ export async function onRequest(context) {
           }
         }
 
-        // 1. 从池中随机取号
         let pool = await getPool();
         const available = pool.filter(p => p.status === 'available');
         if (available.length > 0) {
@@ -150,7 +140,6 @@ export async function onRequest(context) {
           return jsonResponse({ phone, expire });
         }
 
-        // 2. 池空则调用豪猪
         const phoneResp = await fetch(`https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}`);
         const phoneData = await phoneResp.json();
         if (phoneData.code === 0 || phoneData.code === '0') {
@@ -162,7 +151,6 @@ export async function onRequest(context) {
         return jsonResponse({ error: phoneData.msg || '取号失败' }, 500);
       }
 
-      // ========== 释放 ==========
       case 'release': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
@@ -179,24 +167,32 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== 获取验证码 ==========
+      // ========== 获取验证码（增强数字验证） ==========
       case 'getSMS': {
         const order = await kv.get(oid, { type: 'json' });
         if (!order || !order.phone) return jsonResponse({ error: '订单不存在' }, 404);
+
         const smsResp = await fetch(`https://${HAOZHU.server}/sms/?api=getMessage&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`);
         const smsData = await smsResp.json();
+
+        // 无论 code 是否为 0，都要检查是否包含真正的验证码
         if (smsData.code === 0 || smsData.code === '0') {
-          const code = smsData.sms || smsData.Sms || smsData.message || smsData.code_text;
-          if (code) {
-            order.code = code; order.status = 'done';
-            await kv.put(oid, JSON.stringify(order));
-            return jsonResponse({ code, status: 'done' });
+          const raw = smsData.sms || smsData.Sms || smsData.message || smsData.code_text || '';
+          if (raw) {
+            // 提取连续数字，至少 4 位才认为是验证码
+            const digits = raw.replace(/\D/g, '');
+            if (digits.length >= 4) {
+              order.code = raw;   // 保留原始短信内容，方便买家查看
+              order.status = 'done';
+              await kv.put(oid, JSON.stringify(order));
+              return jsonResponse({ code: raw, status: 'done' });
+            }
           }
         }
+        // 未收到有效验证码
         return jsonResponse({ code: null, status: 'active' });
       }
 
-      // 手动指定手机号（可选）
       case 'setPhone': {
         const phone = url.searchParams.get('phone');
         if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
