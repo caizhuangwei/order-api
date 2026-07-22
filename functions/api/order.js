@@ -161,8 +161,7 @@ export async function onRequest(context) {
           const phone = chosen.phone;
           const expire = Date.now() + 60 * 1000;
 
-          // ✅ 关键步骤：激活豪猪平台上的指定号码
-          // 尝试两种可能的接口：getPhone?phone= 和 getAgainNmuber?phone=
+          // ✅ 激活豪猪平台上的指定号码（尝试两个可能的接口）
           let activated = false;
           // 方法1：调用 getPhone 并传 phone 参数
           try {
