@@ -30,12 +30,12 @@ export async function onRequest(context) {
     await kv.put(LOG_KEY, JSON.stringify(logs));
   }
   async function addLog(phone, oid, action) {
+    if (action !== 'sms_received') return; // 仅记录收到验证码
     const logs = await getLogs();
     logs.push({ phone, oid, action, time: new Date().toISOString() });
     await saveLogs(logs);
   }
 
-  // Token 管理
   let tokenData = await kv.get('__token_data__', { type: 'json' });
   let tokenStr = tokenData ? tokenData.token : null;
   let tokenExpiry = tokenData ? tokenData.expire : 0;
@@ -43,24 +43,25 @@ export async function onRequest(context) {
   if (!tokenStr || Date.now() >= tokenExpiry - 300000) {
     const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
     const loginData = await loginResp.json();
-    if (loginData.code === 0 || loginData.code === '0') {
+    if (loginData.code == 0) {
       tokenStr = loginData.token || loginData.Token || loginData.access_token;
       tokenExpiry = Date.now() + 3500000;
       await kv.put('__token_data__', JSON.stringify({ token: tokenStr, expire: tokenExpiry }));
     } else {
-      return jsonResponse({ error: '登录失败: ' + (loginData.msg || '') }, 500);
+      return jsonResponse({ error: '登录失败' }, 500);
     }
   }
 
   try {
     switch (action) {
+
       // ========== 号码池管理 ==========
       case 'poolList': { const pool = await getPool(); return jsonResponse({ pool }); }
       case 'addPhone': {
         const phone = url.searchParams.get('phone');
         if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
         let pool = await getPool();
-        if (pool.some(p => p.phone === phone)) return jsonResponse({ error: '该号码已在池中' }, 400);
+        if (pool.some(p => p.phone === phone)) return jsonResponse({ error: '号码已存在' }, 400);
         pool.push({ phone, status: 'available', oid: null, expire: null });
         await savePool(pool);
         return jsonResponse({ success: true });
@@ -107,7 +108,7 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== 日志 ==========
+      // ========== 日志列表（仅记录收到验证码） ==========
       case 'logList': {
         const logs = await getLogs();
         return jsonResponse({ logs: logs.reverse() });
@@ -132,13 +133,11 @@ export async function onRequest(context) {
         return jsonResponse(order);
       }
 
-      // ========== 获取手机号（带调试信息） ==========
+      // ========== 获取手机号（池优先） ==========
       case 'getPhone': {
         let order = await kv.get(oid, { type: 'json' });
-
         if (order && order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
         if (order && order.status === 'released') return jsonResponse({ error: '订单已被管理员释放' }, 403);
-
         if (order && order.status === 'active' && order.expire && Date.now() < order.expire) {
           return jsonResponse({ phone: order.phone, expire: order.expire });
         }
@@ -153,7 +152,7 @@ export async function onRequest(context) {
           }
         }
 
-        // 1. 从号码池中取号
+        // 1. 从号码池随机取号
         let pool = await getPool();
         const available = pool.filter(p => p.status === 'available');
         if (available.length > 0) {
@@ -161,15 +160,11 @@ export async function onRequest(context) {
           const phone = chosen.phone;
           const expire = Date.now() + 60 * 1000;
 
-          // 调用指定号码接口，并保存完整响应
-          let activateResponse = null;
+          // ✅ 调用豪猪指定号码接口激活
           try {
             const activateUrl = `https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`;
-            const r = await fetch(activateUrl);
-            activateResponse = await r.json();
-          } catch (e) {
-            activateResponse = { error: e.message };
-          }
+            await fetch(activateUrl);
+          } catch (e) {}
 
           chosen.status = 'in_use';
           chosen.oid = oid;
@@ -178,67 +173,70 @@ export async function onRequest(context) {
 
           const newOrder = {
             phone,
-            request_id: activateResponse ? activateResponse.request_id : null,
             expire,
             status: 'active',
             code: null,
             fromPool: true
           };
           await kv.put(oid, JSON.stringify(newOrder));
-          await addLog(phone, oid, 'assigned');
-
-          // 返回给前端，包含激活响应
-          return jsonResponse({ phone, expire, activateResponse });
+          return jsonResponse({ phone, expire });
         }
 
-        // 2. 池空则调用豪猪获取新号
+        // 2. 池空则调用豪猪随机取号
         const phoneResp = await fetch(`https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${HAOZHU.sid}`);
         const phoneData = await phoneResp.json();
-        if (phoneData.code === 0 || phoneData.code === '0') {
+        if (phoneData.code == 0) {
           const phone = phoneData.phone || phoneData.Phone || phoneData.mobile;
           const newOrder = {
             phone,
-            request_id: phoneData.request_id || null,
             expire: Date.now() + 60 * 1000,
             status: 'active',
             code: null,
             fromPool: false
           };
           await kv.put(oid, JSON.stringify(newOrder));
-          await addLog(phone, oid, 'assigned');
           return jsonResponse({ phone, expire: newOrder.expire });
         }
         return jsonResponse({ error: phoneData.msg || '取号失败' }, 500);
       }
 
-      // ========== 释放 ==========
+      // ========== 释放（池号码回池） ==========
       case 'release': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
         if (order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
 
         if (order.phone && order.fromPool) {
+          // 放回池中，不调豪猪释放（池号码是您自己的）
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
-          if (entry) { entry.status = 'available'; entry.oid = null; entry.expire = null; await savePool(pool); }
-          await addLog(order.phone, oid, 'released');
+          if (entry) {
+            entry.status = 'available';
+            entry.oid = null;
+            entry.expire = null;
+            await savePool(pool);
+          }
         } else if (order.phone) {
-          try { await fetch(`https://${HAOZHU.server}/sms/?api=releasePhone&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`); } catch(e) {}
-          await addLog(order.phone, oid, 'released');
+          // 豪猪随机取的号，调用 cancelRecv 释放
+          try {
+            await fetch(`https://${HAOZHU.server}/sms/?api=cancelRecv&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`);
+          } catch(e) {}
         }
 
-        order.status = 'new'; order.phone = null; order.expire = null; order.code = null;
+        order.status = 'new';
+        order.phone = null;
+        order.expire = null;
+        order.code = null;
         await kv.put(oid, JSON.stringify(order));
         return jsonResponse({ success: true });
       }
 
-      // ========== 获取验证码（仅用 phone） ==========
+      // ========== 获取验证码 ==========
       case 'getSMS': {
         const order = await kv.get(oid, { type: 'json' });
-        if (!order || !order.phone) return jsonResponse({ error: '订单不存在或无手机号' }, 404);
+        if (!order || !order.phone) return jsonResponse({ error: '订单不存在' }, 404);
 
-        const smsUrl = `https://${HAOZHU.server}/sms/?api=getMessage&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`;
-        const smsResp = await fetch(smsUrl);
+        const smsResp = await fetch(`https://${HAOZHU.server}/sms/?api=getMessage&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`);
         const smsData = await smsResp.json();
 
         if (smsData.code == 0) {
@@ -269,7 +267,6 @@ export async function onRequest(context) {
         return jsonResponse({ error: '未知操作' }, 400);
     }
   } catch (e) {
-    console.error('Error:', e.message);
     return jsonResponse({ error: e.message }, 500);
   }
 }
