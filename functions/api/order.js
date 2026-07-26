@@ -5,7 +5,10 @@ export async function onRequest(context) {
   const oid = url.searchParams.get('oid');
   const sid = url.searchParams.get('sid') || '24085';
 
-  const poolActions = ['addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList', 'getBalance', 'lockOrder'];
+  const poolActions = [
+    'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone',
+    'logList', 'getBalance', 'lockOrder', 'blockPhone'  // 新增 blockPhone
+  ];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
   }
@@ -70,12 +73,9 @@ export async function onRequest(context) {
         if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
-        // 如果订单已完成，不允许释放
         if (order.status === 'done') return jsonResponse({ error: '订单已完成，无法释放' }, 403);
-        // 如果订单已释放，提示
         if (order.status === 'released') return jsonResponse({ error: '订单已被释放过' }, 400);
 
-        // 如果是池号码，放回池中
         if (order.phone && order.fromPool) {
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
@@ -86,17 +86,33 @@ export async function onRequest(context) {
             await savePool(pool);
           }
         } else if (order.phone) {
-          // 非池号码，调用豪猪释放
           try { await fetch(`https://${HAOZHU.server}/sms/?api=cancelRecv&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`); } catch(e) {}
         }
 
-        // 将订单状态标记为 released
         order.status = 'released';
         order.phone = null;
         order.expire = null;
         order.code = null;
         await kv.put(oid, JSON.stringify(order));
         return jsonResponse({ success: true });
+      }
+
+      // ========== 拉黑手机号 ==========
+      case 'blockPhone': {
+        const phone = url.searchParams.get('phone');
+        if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
+        // 调用豪猪拉黑接口
+        const blockResp = await fetch(`https://${HAOZHU.server}/sms/?api=addBlacklist&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`);
+        const blockData = await blockResp.json();
+        if (blockData.code == 0) {
+          // 同时从号码池中移除该号码
+          let pool = await getPool();
+          pool = pool.filter(p => p.phone !== phone);
+          await savePool(pool);
+          return jsonResponse({ success: true });
+        } else {
+          return jsonResponse({ error: blockData.msg || '拉黑失败' });
+        }
       }
 
       // ========== 号码池管理 ==========
