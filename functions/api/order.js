@@ -4,19 +4,19 @@ export async function onRequest(context) {
   const action = url.searchParams.get('action');
   const oid = url.searchParams.get('oid');
   const sid = url.searchParams.get('sid') || '24085';
+  // 从请求参数中获取 API 账号密码，若无则留空（后续请求会失败，迫使管理员在面板中配置）
+  const apiUser = url.searchParams.get('apiUser') || '';
+  const apiPass = url.searchParams.get('apiPass') || '';
 
-  const poolActions = [
-    'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone',
-    'logList', 'getBalance', 'lockOrder', 'blockPhone'  // 新增 blockPhone
-  ];
+  const poolActions = ['addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList', 'getBalance', 'lockOrder', 'blockPhone'];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
   }
 
   const HAOZHU = {
     server: 'api.haozhuma.com',
-    user: '0d1f0214da0eecc58ba00012056abf8cffbd15763117141296ddc0b5ca9adc7c',
-    pass: '4e32e4470173719e9935172c58c31548284d9b1341fe201f5921060810d0571c',
+    user: apiUser,
+    pass: apiPass,
     sid: sid
   };
 
@@ -44,6 +44,7 @@ export async function onRequest(context) {
   let tokenExpiry = tokenData ? tokenData.expire : 0;
 
   if (!tokenStr || Date.now() >= tokenExpiry - 300000) {
+    if (!HAOZHU.user || !HAOZHU.pass) return jsonResponse({ error: 'API 账号或密码未配置' }, 500);
     const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
     const loginData = await loginResp.json();
     if (loginData.code == 0) {
@@ -66,6 +67,22 @@ export async function onRequest(context) {
           return jsonResponse({ balance: balanceData.balance || balanceData.summary || '未知' });
         }
         return jsonResponse({ error: balanceData.msg || '查询失败' });
+      }
+
+      // ========== 拉黑手机号 ==========
+      case 'blockPhone': {
+        const phone = url.searchParams.get('phone');
+        if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
+        const blockResp = await fetch(`https://${HAOZHU.server}/sms/?api=addBlacklist&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`);
+        const blockData = await blockResp.json();
+        if (blockData.code == 0) {
+          // 同时从号码池中移除该号码
+          let pool = await getPool();
+          pool = pool.filter(p => p.phone !== phone);
+          await savePool(pool);
+          return jsonResponse({ success: true });
+        }
+        return jsonResponse({ error: blockData.msg || '拉黑失败' });
       }
 
       // ========== 管理员强制释放订单 ==========
@@ -95,24 +112,6 @@ export async function onRequest(context) {
         order.code = null;
         await kv.put(oid, JSON.stringify(order));
         return jsonResponse({ success: true });
-      }
-
-      // ========== 拉黑手机号 ==========
-      case 'blockPhone': {
-        const phone = url.searchParams.get('phone');
-        if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
-        // 调用豪猪拉黑接口
-        const blockResp = await fetch(`https://${HAOZHU.server}/sms/?api=addBlacklist&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`);
-        const blockData = await blockResp.json();
-        if (blockData.code == 0) {
-          // 同时从号码池中移除该号码
-          let pool = await getPool();
-          pool = pool.filter(p => p.phone !== phone);
-          await savePool(pool);
-          return jsonResponse({ success: true });
-        } else {
-          return jsonResponse({ error: blockData.msg || '拉黑失败' });
-        }
       }
 
       // ========== 号码池管理 ==========
