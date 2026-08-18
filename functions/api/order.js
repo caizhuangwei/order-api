@@ -4,7 +4,6 @@ export async function onRequest(context) {
   const action = url.searchParams.get('action');
   const oid = url.searchParams.get('oid');
   const sid = url.searchParams.get('sid') || '24085';
-  // 从请求参数中获取 API 账号密码，若无则留空（后续请求会失败，迫使管理员在面板中配置）
   const apiUser = url.searchParams.get('apiUser') || '';
   const apiPass = url.searchParams.get('apiPass') || '';
 
@@ -39,20 +38,33 @@ export async function onRequest(context) {
     await saveLogs(logs);
   }
 
+  // ========== Token 管理（带账号密码校验） ==========
   let tokenData = await kv.get('__token_data__', { type: 'json' });
   let tokenStr = tokenData ? tokenData.token : null;
   let tokenExpiry = tokenData ? tokenData.expire : 0;
+  const tokenApiUser = tokenData ? tokenData.apiUser : null;
+  const tokenApiPass = tokenData ? tokenData.apiPass : null;
 
-  if (!tokenStr || Date.now() >= tokenExpiry - 300000) {
-    if (!HAOZHU.user || !HAOZHU.pass) return jsonResponse({ error: 'API 账号或密码未配置' }, 500);
+  // 如果 token 不存在、过期、或账号密码不匹配，则重新登录
+  const needLogin = !tokenStr || Date.now() >= tokenExpiry - 300000 || tokenApiUser !== apiUser || tokenApiPass !== apiPass;
+
+  if (needLogin) {
+    if (!HAOZHU.user || !HAOZHU.pass) {
+      return jsonResponse({ error: 'API 账号或密码未配置' }, 500);
+    }
     const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
     const loginData = await loginResp.json();
     if (loginData.code == 0) {
       tokenStr = loginData.token || loginData.Token || loginData.access_token;
       tokenExpiry = Date.now() + 3500000;
-      await kv.put('__token_data__', JSON.stringify({ token: tokenStr, expire: tokenExpiry }));
+      await kv.put('__token_data__', JSON.stringify({
+        token: tokenStr,
+        expire: tokenExpiry,
+        apiUser: HAOZHU.user,
+        apiPass: HAOZHU.pass
+      }));
     } else {
-      return jsonResponse({ error: '登录失败' }, 500);
+      return jsonResponse({ error: '登录失败：' + (loginData.msg || '') }, 500);
     }
   }
 
@@ -76,7 +88,6 @@ export async function onRequest(context) {
         const blockResp = await fetch(`https://${HAOZHU.server}/sms/?api=addBlacklist&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`);
         const blockData = await blockResp.json();
         if (blockData.code == 0) {
-          // 同时从号码池中移除该号码
           let pool = await getPool();
           pool = pool.filter(p => p.phone !== phone);
           await savePool(pool);
