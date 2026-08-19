@@ -7,7 +7,12 @@ export async function onRequest(context) {
   const apiUser = url.searchParams.get('apiUser') || '';
   const apiPass = url.searchParams.get('apiPass') || '';
 
-  const poolActions = ['addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList', 'getBalance', 'lockOrder', 'blockPhone'];
+  // 所有无需 oid 的接口（池管理、卡密管理、余额、拉黑等）
+  const poolActions = [
+    'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
+    'getBalance', 'lockOrder', 'blockPhone',
+    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard'
+  ];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
   }
@@ -22,10 +27,13 @@ export async function onRequest(context) {
   const kv = env.ORDERS;
   const POOL_KEY = 'phone_pool';
   const LOG_KEY = 'phone_logs';
+  const CARD_KEY = 'card_keys'; // 卡密存储键
 
+  // ========== 号码池工具 ==========
   async function getPool() { const p = await kv.get(POOL_KEY, { type: 'json' }); return p || []; }
   async function savePool(pool) { await kv.put(POOL_KEY, JSON.stringify(pool)); }
 
+  // ========== 日志工具 ==========
   async function getLogs() { const logs = await kv.get(LOG_KEY, { type: 'json' }); return logs || []; }
   async function saveLogs(logs) {
     if (logs.length > 100) logs = logs.slice(-100);
@@ -38,6 +46,20 @@ export async function onRequest(context) {
     await saveLogs(logs);
   }
 
+  // ========== 卡密工具 ==========
+  async function getCards() { const c = await kv.get(CARD_KEY, { type: 'json' }); return c || []; }
+  async function saveCards(cards) { await kv.put(CARD_KEY, JSON.stringify(cards)); }
+
+  function generateCardKey() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const segment = () => {
+      let s = '';
+      for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
+      return s;
+    };
+    return `HZ-${segment()}-${segment()}`;
+  }
+
   // ========== Token 管理（带账号密码校验） ==========
   let tokenData = await kv.get('__token_data__', { type: 'json' });
   let tokenStr = tokenData ? tokenData.token : null;
@@ -45,7 +67,6 @@ export async function onRequest(context) {
   const tokenApiUser = tokenData ? tokenData.apiUser : null;
   const tokenApiPass = tokenData ? tokenData.apiPass : null;
 
-  // 如果 token 不存在、过期、或账号密码不匹配，则重新登录
   const needLogin = !tokenStr || Date.now() >= tokenExpiry - 300000 || tokenApiUser !== apiUser || tokenApiPass !== apiPass;
 
   if (needLogin) {
@@ -70,6 +91,78 @@ export async function onRequest(context) {
 
   try {
     switch (action) {
+
+      // ========== 卡密系统 ==========
+      case 'generateCard': {
+        const type = url.searchParams.get('type') || 'trial'; // month / trial
+        const count = parseInt(url.searchParams.get('count')) || 1;
+        if (count < 1 || count > 100) return jsonResponse({ error: '数量需在1-100之间' }, 400);
+        const duration = type === 'month' ? 30 : 1;
+        const cards = await getCards();
+        const generated = [];
+        for (let i = 0; i < count; i++) {
+          const key = generateCardKey();
+          cards.push({
+            key,
+            type,
+            duration,
+            activated: false,
+            activated_at: null,
+            expire_at: null,
+            created_at: Date.now()
+          });
+          generated.push(key);
+        }
+        await saveCards(cards);
+        return jsonResponse({ success: true, keys: generated });
+      }
+
+      case 'activateCard': {
+        const key = url.searchParams.get('key');
+        if (!key) return jsonResponse({ error: '缺少卡密' }, 400);
+        const cards = await getCards();
+        const card = cards.find(c => c.key === key);
+        if (!card) return jsonResponse({ error: '卡密不存在' }, 404);
+        if (card.activated) {
+          // 已激活，检查是否过期
+          if (Date.now() > card.expire_at) {
+            return jsonResponse({ error: '卡密已过期' }, 400);
+          }
+          return jsonResponse({ success: true, expire_at: card.expire_at });
+        }
+        // 未激活，激活并设置到期时间
+        const now = Date.now();
+        card.activated = true;
+        card.activated_at = now;
+        card.expire_at = now + card.duration * 86400 * 1000;
+        await saveCards(cards);
+        return jsonResponse({ success: true, expire_at: card.expire_at });
+      }
+
+      case 'verifyCard': {
+        const key = url.searchParams.get('key');
+        if (!key) return jsonResponse({ error: '缺少卡密' }, 400);
+        const cards = await getCards();
+        const card = cards.find(c => c.key === key);
+        if (!card) return jsonResponse({ error: '卡密不存在' }, 404);
+        if (!card.activated) return jsonResponse({ valid: false, msg: '未激活' });
+        if (Date.now() > card.expire_at) return jsonResponse({ valid: false, msg: '已过期' });
+        return jsonResponse({ valid: true, expire_at: card.expire_at });
+      }
+
+      case 'cardList': {
+        const cards = await getCards();
+        return jsonResponse({ cards });
+      }
+
+      case 'deleteCard': {
+        const key = url.searchParams.get('key');
+        if (!key) return jsonResponse({ error: '缺少卡密' }, 400);
+        let cards = await getCards();
+        cards = cards.filter(c => c.key !== key);
+        await saveCards(cards);
+        return jsonResponse({ success: true });
+      }
 
       // ========== 查询余额 ==========
       case 'getBalance': {
