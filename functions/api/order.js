@@ -63,13 +63,19 @@ export async function onRequest(context) {
     return `HZ-${segment()}-${segment()}`;
   }
 
-  // ========== 如果是不需要 API 的操作，直接进入 switch，不进行 token 登录 ==========
+  // ✅ 将 token 相关变量声明在函数作用域，避免块级作用域导致未定义
+  let tokenStr = null;
+  let tokenExpiry = 0;
+  let tokenApiUser = null;
+  let tokenApiPass = null;
+
+  // 如果是不需要 API 的操作，直接进入 switch，不进行 token 登录
   if (!noApiActions.includes(action)) {
     let tokenData = await kv.get('__token_data__', { type: 'json' });
-    let tokenStr = tokenData ? tokenData.token : null;
-    let tokenExpiry = tokenData ? tokenData.expire : 0;
-    const tokenApiUser = tokenData ? tokenData.apiUser : null;
-    const tokenApiPass = tokenData ? tokenData.apiPass : null;
+    tokenStr = tokenData ? tokenData.token : null;
+    tokenExpiry = tokenData ? tokenData.expire : 0;
+    tokenApiUser = tokenData ? tokenData.apiUser : null;
+    tokenApiPass = tokenData ? tokenData.apiPass : null;
 
     const needLogin = !tokenStr || Date.now() >= tokenExpiry - 300000 || tokenApiUser !== apiUser || tokenApiPass !== apiPass;
 
