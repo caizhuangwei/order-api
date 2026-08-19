@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卡密管理 - 卖家专用</title>
+    <style>
+        :root {
+            --bg: #0f0f1a; --card: #1a1a2e; --accent: #00d4aa; --accent2: #00b4d8;
+            --text: #e0e0e0; --text2: #a0a0b8; --danger: #ff4757; --warning: #ffa502;
+            --success: #2ed573; --border: #2a2a40; --input-bg: #12121f; --shadow: 0 4px 24px rgba(0,0,0,0.4);
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg); color: var(--text); min-height: 100vh;
+            display: flex; align-items: center; justify-content: center; padding: 20px;
+        }
+        .container { width:100%; max-width:600px; background:var(--card); border:1px solid var(--border); border-radius:20px; padding:32px 24px; box-shadow:var(--shadow); }
+        .header { text-align:center; margin-bottom:28px; }
+        .header .logo { font-size:2em; font-weight:800; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; letter-spacing:-1px; }
+        .btn { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:14px; border:none; border-radius:12px; font-size:1em; font-weight:600; cursor:pointer; transition:all 0.2s; font-family:inherit; }
+        .btn-primary { background:linear-gradient(135deg, var(--accent), #00b894); color:#000; }
+        .btn-primary:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,212,170,0.35); }
+        .btn-danger { background:var(--danger); color:#fff; }
+        .btn-secondary { background:var(--input-bg); color:#fff; border:1px solid var(--border); margin-top:12px; }
+        .hidden { display:none !important; }
+        .form-group { margin-bottom:16px; }
+        .form-group label { display:block; font-size:0.85em; margin-bottom:6px; color:var(--text2); font-weight:600; }
+        .form-group input, .form-group select { width:100%; padding:12px 14px; background:var(--input-bg); border:1px solid var(--border); border-radius:10px; color:#fff; font-size:0.95em; }
+        .form-group input:focus, .form-group select:focus { outline:none; border-color:var(--accent); }
+        .batch-row { display:flex; gap:10px; align-items:flex-end; }
+        .batch-row .form-group { flex:1; }
+        .card-list { background:var(--input-bg); border-radius:10px; padding:12px; margin-top:12px; font-size:0.85em; text-align:left; max-height:300px; overflow-y:auto; }
+        .card-item { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); }
+        .card-item:last-child { border-bottom:none; }
+        .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.75em; }
+        .badge-active { background:rgba(46,213,115,0.2); color:#2ed573; }
+        .badge-inactive { background:rgba(0,180,216,0.2); color:#00b4d8; }
+        .alert { padding:12px 14px; border-radius:10px; margin:16px 0; font-size:0.85em; }
+        .alert-success { background:rgba(46,213,115,0.1); border:1px solid rgba(46,213,115,0.3); color:#5ced8a; }
+        .alert-error { background:rgba(255,71,87,0.1); border:1px solid rgba(255,71,87,0.3); color:#ff7b88; }
+    </style>
+</head>
+<body>
+
+<div id="loginBox" class="container">
+    <div class="header"><div class="logo">🔐 卖家卡密管理</div></div>
+    <div class="form-group">
+        <label>卖家密码</label>
+        <input type="password" id="sellerPass" placeholder="请输入卖家密码" onkeydown="if(event.key==='Enter')loginSeller()">
+    </div>
+    <button class="btn btn-primary" onclick="loginSeller()">登录</button>
+    <div id="loginError" class="alert alert-error hidden">❌ 密码错误</div>
+</div>
+
+<div id="sellerBox" class="container hidden">
+    <div class="header"><div class="logo">📦 卡密生成与管理</div></div>
+
+    <div class="section-title">生成卡密</div>
+    <div class="batch-row">
+        <div class="form-group">
+            <label>类型</label>
+            <select id="cardType">
+                <option value="trial">试用卡（1天）</option>
+                <option value="month">月卡（30天）</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>数量</label>
+            <input type="number" id="cardCount" min="1" max="100" value="1">
+        </div>
+        <button class="btn btn-primary" onclick="generateCards()">生成</button>
+    </div>
+    <div id="generatedKeys" class="hidden">
+        <div class="alert alert-success">✅ 生成成功，请复制保存：</div>
+        <textarea id="keysOutput" rows="5" style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:#fff;padding:10px;"></textarea>
+        <button class="btn btn-secondary" onclick="copyKeys()">📋 复制全部卡密</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section-title">卡密列表</div>
+    <button class="btn btn-secondary" onclick="loadCards()">🔄 刷新列表</button>
+    <div id="cardListContainer" class="card-list">加载中...</div>
+</div>
+
+<script>
+(function() {
+    const API_BASE = 'https://order-api.pages.dev/api/order';
+    const SELLER_PASSWORD = 'seller123'; // shinia299.
+
+    const loginBox = document.getElementById('loginBox');
+    const sellerBox = document.getElementById('sellerBox');
+
+    if (sessionStorage.getItem('seller_logged_in') === 'true') {
+        loginBox.classList.add('hidden');
+        sellerBox.classList.remove('hidden');
+        loadCards();
+    }
+
+    window.loginSeller = () => {
+        const pass = document.getElementById('sellerPass').value;
+        if (pass === SELLER_PASSWORD) {
+            sessionStorage.setItem('seller_logged_in', 'true');
+            loginBox.classList.add('hidden');
+            sellerBox.classList.remove('hidden');
+            document.getElementById('loginError').classList.add('hidden');
+            loadCards();
+        } else {
+            document.getElementById('loginError').classList.remove('hidden');
+        }
+    };
+
+    window.generateCards = async () => {
+        const type = document.getElementById('cardType').value;
+        const count = parseInt(document.getElementById('cardCount').value) || 1;
+        if (count < 1 || count > 100) return alert('数量需在1-100之间');
+        try {
+            const resp = await fetch(`${API_BASE}?action=generateCard&type=${type}&count=${count}`);
+            const data = await resp.json();
+            if (data.success) {
+                document.getElementById('keysOutput').value = data.keys.join('\n');
+                document.getElementById('generatedKeys').classList.remove('hidden');
+                loadCards();
+            } else {
+                alert(data.error || '生成失败');
+            }
+        } catch(e) { alert('请求失败'); }
+    };
+
+    window.copyKeys = () => {
+        const text = document.getElementById('keysOutput').value;
+        if (!text) return;
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(() => alert('已复制'));
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position='fixed'; ta.style.left='-9999px';
+            document.body.appendChild(ta); ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            alert('已复制');
+        }
+    };
+
+    async function loadCards() {
+        const container = document.getElementById('cardListContainer');
+        try {
+            const resp = await fetch(`${API_BASE}?action=cardList`);
+            const data = await resp.json();
+            if (!data.cards || data.cards.length === 0) {
+                container.innerHTML = '<span style="color:var(--text2);">暂无卡密</span>';
+                return;
+            }
+            container.innerHTML = data.cards.map(card => {
+                const status = card.activated ? '已激活' : '未激活';
+                const expire = card.expire_at ? new Date(card.expire_at).toLocaleString('zh-CN') : '—';
+                return `<div class="card-item">
+                    <div>
+                        <div>${card.key}</div>
+                        <small style="color:var(--text2);">${card.type} | ${status} | 到期：${expire}</small>
+                    </div>
+                    <button class="btn btn-danger" style="padding:4px 10px;font-size:0.75em;" onclick="deleteCard('${card.key}')">删除</button>
+                </div>`;
+            }).join('');
+        } catch(e) { container.innerHTML = '<span style="color:var(--danger);">加载失败</span>'; }
+    }
+
+    window.deleteCard = async (key) => {
+        if (!confirm(`确定删除卡密 ${key}？`)) return;
+        await fetch(`${API_BASE}?action=deleteCard&key=${encodeURIComponent(key)}`);
+        loadCards();
+    };
+})();
+</script>
+</body>
+</html>
