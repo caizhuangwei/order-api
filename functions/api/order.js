@@ -11,7 +11,8 @@ export async function onRequest(context) {
   const poolActions = [
     'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
     'getBalance', 'lockOrder', 'blockPhone',
-    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard', 'deleteAllCards'
+    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard', 'deleteAllCards',
+    'clearLogs'
   ];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
@@ -20,7 +21,8 @@ export async function onRequest(context) {
   // 无需豪猪 API 的操作（跳过 token 登录）
   const noApiActions = [
     'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard', 'deleteAllCards',
-    'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList'
+    'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
+    'clearLogs'
   ];
 
   const HAOZHU = {
@@ -63,7 +65,7 @@ export async function onRequest(context) {
     return `HZ-${segment()}-${segment()}`;
   }
 
-  // ✅ 将 token 相关变量声明在函数作用域，避免块级作用域导致未定义
+  // Token 相关变量（提升至函数作用域）
   let tokenStr = null;
   let tokenExpiry = 0;
   let tokenApiUser = null;
@@ -285,6 +287,12 @@ export async function onRequest(context) {
       case 'logList': {
         const logs = await getLogs();
         return jsonResponse({ logs: logs.reverse() });
+      }
+
+      // ========== 清空验证码接收记录 ==========
+      case 'clearLogs': {
+        await saveLogs([]);
+        return jsonResponse({ success: true });
       }
 
       // ========== 订单状态 ==========
