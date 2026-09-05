@@ -7,20 +7,20 @@ export async function onRequest(context) {
   const apiUser = url.searchParams.get('apiUser') || '';
   const apiPass = url.searchParams.get('apiPass') || '';
 
-  // 所有无需 oid 的接口
   const poolActions = [
     'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
     'getBalance', 'lockOrder', 'blockPhone',
-    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard', 'deleteAllCards'
+    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard', 'deleteAllCards',
+    'clearLogs', 'createShortOrder', 'getShortOrder'
   ];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
   }
 
-  // 无需豪猪 API 的操作（跳过 token 登录）
   const noApiActions = [
     'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard', 'deleteAllCards',
-    'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList'
+    'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
+    'clearLogs', 'createShortOrder', 'getShortOrder'
   ];
 
   const HAOZHU = {
@@ -63,13 +63,12 @@ export async function onRequest(context) {
     return `HZ-${segment()}-${segment()}`;
   }
 
-  // ✅ 将 token 相关变量声明在函数作用域，避免块级作用域导致未定义
+  // Token 相关变量
   let tokenStr = null;
   let tokenExpiry = 0;
   let tokenApiUser = null;
   let tokenApiPass = null;
 
-  // 如果是不需要 API 的操作，直接进入 switch，不进行 token 登录
   if (!noApiActions.includes(action)) {
     let tokenData = await kv.get('__token_data__', { type: 'json' });
     tokenStr = tokenData ? tokenData.token : null;
@@ -102,6 +101,26 @@ export async function onRequest(context) {
 
   try {
     switch (action) {
+
+      // ========== 短订单支持 ==========
+      case 'createShortOrder': {
+        const shortId = 'HZ' + Math.random().toString(36).substring(2, 8).toUpperCase();
+        await kv.put('short_' + shortId, JSON.stringify({
+          sid,
+          apiUser,
+          apiPass,
+          created_at: Date.now()
+        }));
+        return jsonResponse({ shortId });
+      }
+
+      case 'getShortOrder': {
+        const shortId = url.searchParams.get('shortId');
+        if (!shortId) return jsonResponse({ error: '缺少短ID' }, 400);
+        const data = await kv.get('short_' + shortId, { type: 'json' });
+        if (!data) return jsonResponse({ error: '订单不存在或已过期' }, 404);
+        return jsonResponse(data);
+      }
 
       // ========== 卡密系统 ==========
       case 'generateCard': {
@@ -285,6 +304,12 @@ export async function onRequest(context) {
       case 'logList': {
         const logs = await getLogs();
         return jsonResponse({ logs: logs.reverse() });
+      }
+
+      // ========== 清空验证码接收记录 ==========
+      case 'clearLogs': {
+        await saveLogs([]);
+        return jsonResponse({ success: true });
       }
 
       // ========== 订单状态 ==========
