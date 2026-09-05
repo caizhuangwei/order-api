@@ -4,24 +4,20 @@ export async function onRequest(context) {
   const action = url.searchParams.get('action');
   const oid = url.searchParams.get('oid');
   const sid = url.searchParams.get('sid') || '24085';
-  const apiUser = url.searchParams.get('apiUser') || '';
-  const apiPass = url.searchParams.get('apiPass') || '';
 
+  // 写死的 API 账号密码（不再从 URL 读取）
+  const apiUser = '0d1f0214da0eecc58ba00012056abf8ceba61d3522e9d1b4b4882aa28892c374';
+  const apiPass = '4e32e4470173719ea41f7388d6f3fabfbd0a19edc3c1851c5921060810d0571c';
+
+  // 所有无需 oid 的接口
   const poolActions = [
     'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
     'getBalance', 'lockOrder', 'blockPhone',
-    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard', 'deleteAllCards',
-    'clearLogs', 'createShortOrder', 'getShortOrder'
+    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard'
   ];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
   }
-
-  const noApiActions = [
-    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard', 'deleteAllCards',
-    'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
-    'clearLogs', 'createShortOrder', 'getShortOrder'
-  ];
 
   const HAOZHU = {
     server: 'api.haozhuma.com',
@@ -63,64 +59,34 @@ export async function onRequest(context) {
     return `HZ-${segment()}-${segment()}`;
   }
 
-  // Token 相关变量
-  let tokenStr = null;
-  let tokenExpiry = 0;
-  let tokenApiUser = null;
-  let tokenApiPass = null;
+  // Token 管理（账号密码固定，但仍校验缓存一致性）
+  let tokenData = await kv.get('__token_data__', { type: 'json' });
+  let tokenStr = tokenData ? tokenData.token : null;
+  let tokenExpiry = tokenData ? tokenData.expire : 0;
+  const tokenApiUser = tokenData ? tokenData.apiUser : null;
+  const tokenApiPass = tokenData ? tokenData.apiPass : null;
 
-  if (!noApiActions.includes(action)) {
-    let tokenData = await kv.get('__token_data__', { type: 'json' });
-    tokenStr = tokenData ? tokenData.token : null;
-    tokenExpiry = tokenData ? tokenData.expire : 0;
-    tokenApiUser = tokenData ? tokenData.apiUser : null;
-    tokenApiPass = tokenData ? tokenData.apiPass : null;
+  const needLogin = !tokenStr || Date.now() >= tokenExpiry - 300000 || tokenApiUser !== apiUser || tokenApiPass !== apiPass;
 
-    const needLogin = !tokenStr || Date.now() >= tokenExpiry - 300000 || tokenApiUser !== apiUser || tokenApiPass !== apiPass;
-
-    if (needLogin) {
-      if (!HAOZHU.user || !HAOZHU.pass) {
-        return jsonResponse({ error: 'API 账号或密码未配置' }, 500);
-      }
-      const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
-      const loginData = await loginResp.json();
-      if (loginData.code == 0) {
-        tokenStr = loginData.token || loginData.Token || loginData.access_token;
-        tokenExpiry = Date.now() + 3500000;
-        await kv.put('__token_data__', JSON.stringify({
-          token: tokenStr,
-          expire: tokenExpiry,
-          apiUser: HAOZHU.user,
-          apiPass: HAOZHU.pass
-        }));
-      } else {
-        return jsonResponse({ error: '登录失败：' + (loginData.msg || '') }, 500);
-      }
+  if (needLogin) {
+    const loginResp = await fetch(`https://${HAOZHU.server}/sms/?api=login&user=${HAOZHU.user}&pass=${HAOZHU.pass}`);
+    const loginData = await loginResp.json();
+    if (loginData.code == 0) {
+      tokenStr = loginData.token || loginData.Token || loginData.access_token;
+      tokenExpiry = Date.now() + 3500000;
+      await kv.put('__token_data__', JSON.stringify({
+        token: tokenStr,
+        expire: tokenExpiry,
+        apiUser: HAOZHU.user,
+        apiPass: HAOZHU.pass
+      }));
+    } else {
+      return jsonResponse({ error: '登录失败：' + (loginData.msg || '') }, 500);
     }
   }
 
   try {
     switch (action) {
-
-      // ========== 短订单支持 ==========
-      case 'createShortOrder': {
-        const shortId = 'HZ' + Math.random().toString(36).substring(2, 8).toUpperCase();
-        await kv.put('short_' + shortId, JSON.stringify({
-          sid,
-          apiUser,
-          apiPass,
-          created_at: Date.now()
-        }));
-        return jsonResponse({ shortId });
-      }
-
-      case 'getShortOrder': {
-        const shortId = url.searchParams.get('shortId');
-        if (!shortId) return jsonResponse({ error: '缺少短ID' }, 400);
-        const data = await kv.get('short_' + shortId, { type: 'json' });
-        if (!data) return jsonResponse({ error: '订单不存在或已过期' }, 404);
-        return jsonResponse(data);
-      }
 
       // ========== 卡密系统 ==========
       case 'generateCard': {
@@ -187,11 +153,6 @@ export async function onRequest(context) {
         let cards = await getCards();
         cards = cards.filter(c => c.key !== key);
         await saveCards(cards);
-        return jsonResponse({ success: true });
-      }
-
-      case 'deleteAllCards': {
-        await saveCards([]);
         return jsonResponse({ success: true });
       }
 
@@ -304,12 +265,6 @@ export async function onRequest(context) {
       case 'logList': {
         const logs = await getLogs();
         return jsonResponse({ logs: logs.reverse() });
-      }
-
-      // ========== 清空验证码接收记录 ==========
-      case 'clearLogs': {
-        await saveLogs([]);
-        return jsonResponse({ success: true });
       }
 
       // ========== 订单状态 ==========
