@@ -5,15 +5,16 @@ export async function onRequest(context) {
   const oid = url.searchParams.get('oid');
   const sid = url.searchParams.get('sid') || '24085';
 
-  // 写死的 API 账号密码（不再从 URL 读取）
+  // 写死的 API 账号密码
   const apiUser = '0d1f0214da0eecc58ba00012056abf8ceba61d3522e9d1b4b4882aa28892c374';
   const apiPass = '4e32e4470173719ea41f7388d6f3fabfbd0a19edc3c1851c5921060810d0571c';
 
-  // 所有无需 oid 的接口
+  // 所有无需 oid 的接口（包括新增的 createOrder）
   const poolActions = [
     'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
     'getBalance', 'lockOrder', 'blockPhone',
-    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard'
+    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard',
+    'createOrder'   // ✅ 新增
   ];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
@@ -88,6 +89,16 @@ export async function onRequest(context) {
   try {
     switch (action) {
 
+      // ========== ✅ 新增：预创建订单 ==========
+      case 'createOrder': {
+        if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
+        let existing = await kv.get(oid, { type: 'json' });
+        if (existing) return jsonResponse({ error: '订单已存在' }, 400);
+        const newOrder = { status: 'new', phone: null, expire: null, code: null, fromPool: false };
+        await kv.put(oid, JSON.stringify(newOrder));
+        return jsonResponse({ success: true });
+      }
+
       // ========== 卡密系统 ==========
       case 'generateCard': {
         const type = url.searchParams.get('type') || 'trial';
@@ -156,16 +167,14 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== ✅ 修复：查询余额（兼容多种字段） ==========
+      // ========== 查询余额 ==========
       case 'getBalance': {
         const balanceResp = await fetch(`https://${HAOZHU.server}/sms/?api=getSummary&token=${tokenStr}`);
         const balanceData = await balanceResp.json();
         if (balanceData.code == 0) {
-          // 兼容多种字段格式
           let bal = balanceData.balance || balanceData.summary || balanceData.money ||
                     balanceData.data?.balance || balanceData.data?.money || balanceData.amount;
           if (bal === undefined || bal === null) {
-            // 如果都找不到，返回原始数据以便调试
             return jsonResponse({ error: '未找到余额字段，原始响应: ' + JSON.stringify(balanceData) });
           }
           return jsonResponse({ balance: bal });
@@ -276,10 +285,12 @@ export async function onRequest(context) {
         return jsonResponse({ logs: logs.reverse() });
       }
 
-      // ========== 订单状态 ==========
+      // ========== ✅ 修改：订单状态（不存在返回 invalid） ==========
       case 'status': {
         let order = await kv.get(oid, { type: 'json' });
-        if (!order) return jsonResponse({ status: 'new', phone: null, expire: null, code: null });
+        if (!order) {
+          return jsonResponse({ status: 'invalid', phone: null, expire: null, code: null });
+        }
         if (order.expire && order.status === 'active' && Date.now() >= order.expire) {
           if (order.fromPool && order.phone) {
             let pool = await getPool();
@@ -295,16 +306,19 @@ export async function onRequest(context) {
         return jsonResponse(order);
       }
 
-      // ========== 获取手机号（池优先） ==========
+      // ========== ✅ 修改：获取手机号（不存在则拒绝） ==========
       case 'getPhone': {
         let order = await kv.get(oid, { type: 'json' });
-        if (order && order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
-        if (order && order.status === 'released') return jsonResponse({ error: '订单已被管理员释放' }, 403);
-        if (order && order.status === 'active' && order.expire && Date.now() < order.expire) {
+        if (!order) {
+          return jsonResponse({ error: '订单不存在或已失效' }, 404);
+        }
+        if (order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
+        if (order.status === 'released') return jsonResponse({ error: '订单已被管理员释放' }, 403);
+        if (order.status === 'active' && order.expire && Date.now() < order.expire) {
           return jsonResponse({ phone: order.phone, expire: order.expire });
         }
 
-        if (order && order.phone && order.fromPool) {
+        if (order.phone && order.fromPool) {
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
           if (entry && entry.status === 'in_use') {
