@@ -5,16 +5,15 @@ export async function onRequest(context) {
   const oid = url.searchParams.get('oid');
   const sid = url.searchParams.get('sid') || '24085';
 
-  // 写死的 API 账号密码（请根据实际修改）
+  // 写死的 API 账号密码（不再从 URL 读取）
   const apiUser = '0d1f0214da0eecc58ba00012056abf8ceba61d3522e9d1b4b4882aa28892c374';
   const apiPass = '4e32e4470173719ea41f7388d6f3fabfbd0a19edc3c1851c5921060810d0571c';
 
-  // 所有无需 oid 的接口（包括新增的 createOrder）
+  // 所有无需 oid 的接口
   const poolActions = [
     'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
     'getBalance', 'lockOrder', 'blockPhone',
-    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard',
-    'createOrder'   // ✅ 新增，无需 oid
+    'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard'
   ];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
@@ -60,7 +59,7 @@ export async function onRequest(context) {
     return `HZ-${segment()}-${segment()}`;
   }
 
-  // Token 管理
+  // Token 管理（账号密码固定，但仍校验缓存一致性）
   let tokenData = await kv.get('__token_data__', { type: 'json' });
   let tokenStr = tokenData ? tokenData.token : null;
   let tokenExpiry = tokenData ? tokenData.expire : 0;
@@ -88,16 +87,6 @@ export async function onRequest(context) {
 
   try {
     switch (action) {
-
-      // ========== ✅ 新增：预创建订单 ==========
-      case 'createOrder': {
-        if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
-        let existing = await kv.get(oid, { type: 'json' });
-        if (existing) return jsonResponse({ error: '订单已存在' }, 400);
-        const newOrder = { status: 'new', phone: null, expire: null, code: null, fromPool: false };
-        await kv.put(oid, JSON.stringify(newOrder));
-        return jsonResponse({ success: true });
-      }
 
       // ========== 卡密系统 ==========
       case 'generateCard': {
@@ -171,14 +160,7 @@ export async function onRequest(context) {
       case 'getBalance': {
         const balanceResp = await fetch(`https://${HAOZHU.server}/sms/?api=getSummary&token=${tokenStr}`);
         const balanceData = await balanceResp.json();
-        if (balanceData.code == 0) {
-          let bal = balanceData.balance || balanceData.summary || balanceData.money ||
-                    balanceData.data?.balance || balanceData.data?.money || balanceData.amount;
-          if (bal === undefined || bal === null) {
-            return jsonResponse({ error: '未获取到余额，原始响应: ' + JSON.stringify(balanceData) });
-          }
-          return jsonResponse({ balance: bal });
-        }
+        if (balanceData.code == 0) return jsonResponse({ balance: balanceData.balance || balanceData.summary || '未知' });
         return jsonResponse({ error: balanceData.msg || '查询失败' });
       }
 
@@ -285,12 +267,10 @@ export async function onRequest(context) {
         return jsonResponse({ logs: logs.reverse() });
       }
 
-      // ========== ✅ 修改：订单状态（不存在返回 invalid） ==========
+      // ========== 订单状态 ==========
       case 'status': {
         let order = await kv.get(oid, { type: 'json' });
-        if (!order) {
-          return jsonResponse({ status: 'invalid', phone: null, expire: null, code: null });
-        }
+        if (!order) return jsonResponse({ status: 'new', phone: null, expire: null, code: null });
         if (order.expire && order.status === 'active' && Date.now() >= order.expire) {
           if (order.fromPool && order.phone) {
             let pool = await getPool();
@@ -306,19 +286,16 @@ export async function onRequest(context) {
         return jsonResponse(order);
       }
 
-      // ========== ✅ 修改：获取手机号（不存在则拒绝） ==========
+      // ========== 获取手机号（池优先） ==========
       case 'getPhone': {
         let order = await kv.get(oid, { type: 'json' });
-        if (!order) {
-          return jsonResponse({ error: '订单不存在或已失效' }, 404);
-        }
-        if (order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
-        if (order.status === 'released') return jsonResponse({ error: '订单已被管理员释放' }, 403);
-        if (order.status === 'active' && order.expire && Date.now() < order.expire) {
+        if (order && order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
+        if (order && order.status === 'released') return jsonResponse({ error: '订单已被管理员释放' }, 403);
+        if (order && order.status === 'active' && order.expire && Date.now() < order.expire) {
           return jsonResponse({ phone: order.phone, expire: order.expire });
         }
 
-        if (order.phone && order.fromPool) {
+        if (order && order.phone && order.fromPool) {
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
           if (entry && entry.status === 'in_use') {
