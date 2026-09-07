@@ -59,7 +59,7 @@ export async function onRequest(context) {
     return `HZ-${segment()}-${segment()}`;
   }
 
-  // Token 管理（账号密码固定，但仍校验缓存一致性）
+  // Token 管理
   let tokenData = await kv.get('__token_data__', { type: 'json' });
   let tokenStr = tokenData ? tokenData.token : null;
   let tokenExpiry = tokenData ? tokenData.expire : 0;
@@ -156,11 +156,20 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== 查询余额 ==========
+      // ========== ✅ 修复：查询余额（兼容多种字段） ==========
       case 'getBalance': {
         const balanceResp = await fetch(`https://${HAOZHU.server}/sms/?api=getSummary&token=${tokenStr}`);
         const balanceData = await balanceResp.json();
-        if (balanceData.code == 0) return jsonResponse({ balance: balanceData.balance || balanceData.summary || '未知' });
+        if (balanceData.code == 0) {
+          // 兼容多种字段格式
+          let bal = balanceData.balance || balanceData.summary || balanceData.money ||
+                    balanceData.data?.balance || balanceData.data?.money || balanceData.amount;
+          if (bal === undefined || bal === null) {
+            // 如果都找不到，返回原始数据以便调试
+            return jsonResponse({ error: '未找到余额字段，原始响应: ' + JSON.stringify(balanceData) });
+          }
+          return jsonResponse({ balance: bal });
+        }
         return jsonResponse({ error: balanceData.msg || '查询失败' });
       }
 
