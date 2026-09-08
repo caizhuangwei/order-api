@@ -8,7 +8,7 @@ export async function onRequest(context) {
   const ts = Date.now(); // 或者用固定值，但最好用当前时间戳防止缓存
 
   // 拼接完整链接
-  const targetUrl = `https://c123654.pages.dev/adminindex.html?oid=${oid}&sid=${sid}&ts=${ts}`;
+  const targetUrl = `https://oo55426.pages.dev/adminindex.html?oid=${oid}&sid=${sid}&ts=${ts}`;
 
   // 返回 302 重定向
   return Response.redirect(targetUrl, 302);
