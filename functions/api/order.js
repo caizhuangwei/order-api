@@ -89,12 +89,20 @@ export async function onRequest(context) {
   try {
     switch (action) {
 
-      // ========== ✅ 新增：预创建订单 ==========
+      // ========== ✅ 修改：预创建订单（保存 sid 和 ts） ==========
       case 'createOrder': {
         if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
         let existing = await kv.get(oid, { type: 'json' });
         if (existing) return jsonResponse({ error: '订单已存在' }, 400);
-        const newOrder = { status: 'new', phone: null, expire: null, code: null, fromPool: false };
+        const newOrder = {
+          status: 'new',
+          phone: null,
+          expire: null,
+          code: null,
+          fromPool: false,
+          sid: sid,                // ✅ 保存 sid
+          ts: Date.now()           // ✅ 保存创建时间戳
+        };
         await kv.put(oid, JSON.stringify(newOrder));
         return jsonResponse({ success: true });
       }
@@ -285,7 +293,7 @@ export async function onRequest(context) {
         return jsonResponse({ logs: logs.reverse() });
       }
 
-      // ========== ✅ 修改：订单状态（不存在返回 invalid） ==========
+      // ========== 订单状态（不存在返回 invalid） ==========
       case 'status': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) {
@@ -306,7 +314,7 @@ export async function onRequest(context) {
         return jsonResponse(order);
       }
 
-      // ========== ✅ 修改：获取手机号（不存在则拒绝） ==========
+      // ========== 获取手机号（不存在则拒绝） ==========
       case 'getPhone': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) {
