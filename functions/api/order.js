@@ -9,12 +9,14 @@ export async function onRequest(context) {
   const apiUser = '0d1f0214da0eecc58ba00012056abf8ceba61d3522e9d1b4b4882aa28892c374';
   const apiPass = '4e32e4470173719ea41f7388d6f3fabfbd0a19edc3c1851c5921060810d0571c';
 
-  // 所有无需 oid 的接口（包括新增的 createOrder）
+  // 所有无需 oid 的接口（包括新增的 listActiveOrders 和 releaseAllOrders）
   const poolActions = [
     'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
     'getBalance', 'lockOrder', 'blockPhone',
     'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard',
-    'createOrder'   // ✅ 新增
+    'createOrder',
+    'listActiveOrders',   // ✅ 新增
+    'releaseAllOrders'    // ✅ 新增
   ];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
@@ -86,10 +88,71 @@ export async function onRequest(context) {
     }
   }
 
+  // ========== 辅助函数：释放单个订单 ==========
+  async function releaseOrderByOid(oid) {
+    let order = await kv.get(oid, { type: 'json' });
+    if (!order) return { success: false, error: '订单不存在' };
+    if (order.status === 'done') return { success: false, error: '订单已完成，无法释放' };
+    if (order.status === 'released') return { success: false, error: '订单已被释放过' };
+
+    if (order.phone && order.fromPool) {
+      let pool = await getPool();
+      const entry = pool.find(p => p.phone === order.phone);
+      if (entry && entry.status === 'in_use') {
+        entry.status = 'available';
+        entry.oid = null;
+        entry.expire = null;
+        await savePool(pool);
+      }
+    } else if (order.phone) {
+      try {
+        await fetch(`https://${HAOZHU.server}/sms/?api=cancelRecv&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`);
+      } catch(e) {}
+    }
+
+    order.status = 'released';
+    order.phone = null;
+    order.expire = null;
+    order.code = null;
+    await kv.put(oid, JSON.stringify(order));
+    return { success: true };
+  }
+
   try {
     switch (action) {
 
-      // ========== ✅ 新增：预创建订单 ==========
+      // ========== ✅ 新增：列出活跃订单 ==========
+      case 'listActiveOrders': {
+        const keys = await kv.list();
+        const orders = [];
+        for (const key of keys.keys) {
+          // 跳过系统 key（以下划线开头或特定 key）
+          if (key.name.startsWith('__') || key.name === POOL_KEY || key.name === LOG_KEY || key.name === CARD_KEY) continue;
+          const order = await kv.get(key.name, { type: 'json' });
+          if (order && order.status === 'active' && order.phone) {
+            orders.push({ oid: key.name, phone: order.phone });
+          }
+        }
+        return jsonResponse({ orders });
+      }
+
+      // ========== ✅ 新增：一键释放全部活跃订单 ==========
+      case 'releaseAllOrders': {
+        const keys = await kv.list();
+        const results = [];
+        for (const key of keys.keys) {
+          if (key.name.startsWith('__') || key.name === POOL_KEY || key.name === LOG_KEY || key.name === CARD_KEY) continue;
+          const order = await kv.get(key.name, { type: 'json' });
+          if (order && order.status === 'active') {
+            const result = await releaseOrderByOid(key.name);
+            results.push({ oid: key.name, success: result.success, error: result.error });
+          }
+        }
+        const successCount = results.filter(r => r.success).length;
+        return jsonResponse({ success: true, released: successCount, total: results.length, details: results });
+      }
+
+      // ========== 预创建订单 ==========
       case 'createOrder': {
         if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
         let existing = await kv.get(oid, { type: 'json' });
@@ -197,33 +260,15 @@ export async function onRequest(context) {
         return jsonResponse({ error: blockData.msg || '拉黑失败' });
       }
 
-      // ========== 管理员强制释放订单 ==========
+      // ========== 管理员强制释放订单（复用辅助函数） ==========
       case 'lockOrder': {
         if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
-        let order = await kv.get(oid, { type: 'json' });
-        if (!order) return jsonResponse({ error: '订单不存在' }, 404);
-        if (order.status === 'done') return jsonResponse({ error: '订单已完成，无法释放' }, 403);
-        if (order.status === 'released') return jsonResponse({ error: '订单已被释放过' }, 400);
-
-        if (order.phone && order.fromPool) {
-          let pool = await getPool();
-          const entry = pool.find(p => p.phone === order.phone);
-          if (entry && entry.status === 'in_use') {
-            entry.status = 'available';
-            entry.oid = null;
-            entry.expire = null;
-            await savePool(pool);
-          }
-        } else if (order.phone) {
-          try { await fetch(`https://${HAOZHU.server}/sms/?api=cancelRecv&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${order.phone}`); } catch(e) {}
+        const result = await releaseOrderByOid(oid);
+        if (result.success) {
+          return jsonResponse({ success: true });
+        } else {
+          return jsonResponse({ error: result.error }, 400);
         }
-
-        order.status = 'released';
-        order.phone = null;
-        order.expire = null;
-        order.code = null;
-        await kv.put(oid, JSON.stringify(order));
-        return jsonResponse({ success: true });
       }
 
       // ========== 号码池管理 ==========
@@ -285,7 +330,7 @@ export async function onRequest(context) {
         return jsonResponse({ logs: logs.reverse() });
       }
 
-      // ========== ✅ 修改：订单状态（不存在返回 invalid） ==========
+      // ========== 订单状态 ==========
       case 'status': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) {
@@ -306,7 +351,7 @@ export async function onRequest(context) {
         return jsonResponse(order);
       }
 
-      // ========== ✅ 修改：获取手机号（不存在则拒绝） ==========
+      // ========== 获取手机号 ==========
       case 'getPhone': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) {
