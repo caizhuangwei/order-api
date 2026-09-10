@@ -99,6 +99,20 @@ export async function onRequest(context) {
     return { success: true };
   }
 
+  // ✅ 统一构造“对前端友好”的订单响应：expire 与 expire_at 同时输出
+  //    expire     = 历史字段，保持兼容
+  //    expire_at  = 毫秒时间戳别名，前端优先使用
+  //    过期或已释放时 expire_at 统一为 null，避免前端误算
+  function orderToResponse(order) {
+    const isActive = order && order.status === 'active' && order.expire;
+    const expireAt = isActive ? Number(order.expire) : null;
+    return {
+      ...order,
+      expire: isActive ? Number(order.expire) : null,
+      expire_at: expireAt
+    };
+  }
+
   try {
     switch (action) {
 
@@ -338,7 +352,7 @@ export async function onRequest(context) {
 
       case 'status': {
         let order = await kv.get(oid, { type: 'json' });
-        if (!order) return jsonResponse({ status: 'invalid', phone: null, expire: null, code: null });
+        if (!order) return jsonResponse({ status: 'invalid', phone: null, expire: null, expire_at: null, code: null });
         if (order.expire && order.status === 'active' && Date.now() >= order.expire) {
           if (order.fromPool && order.phone) {
             let pool = await getPool();
@@ -351,7 +365,8 @@ export async function onRequest(context) {
           order.status = 'expired';
           await kv.put(oid, JSON.stringify(order));
         }
-        return jsonResponse(order);
+        // ✅ 统一带上 expire_at（毫秒时间戳）
+        return jsonResponse(orderToResponse(order));
       }
 
       case 'getPhone': {
@@ -359,8 +374,15 @@ export async function onRequest(context) {
         if (!order) return jsonResponse({ error: '订单不存在或已失效' }, 404);
         if (order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
         if (order.status === 'released') return jsonResponse({ error: '订单已被管理员释放' }, 403);
+
+        // ✅ 已有活跃号码：把 expire / expire_at 一起返回，前端可原样恢复倒计时
         if (order.status === 'active' && order.expire && Date.now() < order.expire) {
-          return jsonResponse({ phone: order.phone, expire: order.expire });
+          return jsonResponse({
+            phone: order.phone,
+            expire: Number(order.expire),
+            expire_at: Number(order.expire),
+            status: 'active'
+          });
         }
 
         if (order.phone && order.fromPool) {
@@ -377,13 +399,13 @@ export async function onRequest(context) {
         if (available.length > 0) {
           const chosen = available[Math.floor(Math.random() * available.length)];
           const phone = chosen.phone;
-          // ✅ 改成 180 秒
           const expire = Date.now() + PHONE_TTL_MS;
           chosen.status = 'in_use'; chosen.oid = oid; chosen.expire = expire;
           await savePool(pool);
           const newOrder = { ...order, phone, expire, status: 'active', code: null, fromPool: true };
           await kv.put(oid, JSON.stringify(newOrder));
-          return jsonResponse({ phone, expire });
+          // ✅ 同时返回 expire / expire_at
+          return jsonResponse({ phone, expire, expire_at: expire, status: 'active' });
         }
 
         if (!order.projectId) {
@@ -403,11 +425,11 @@ export async function onRequest(context) {
 
         if (phoneData.code === 1) {
           const phone = phoneData.data?.phone || phoneData.data?.mobile;
-          // ✅ 改成 180 秒
           const expire = Date.now() + PHONE_TTL_MS;
           const newOrder = { ...order, phone, expire, status: 'active', code: null, fromPool: false };
           await kv.put(oid, JSON.stringify(newOrder));
-          return jsonResponse({ phone, expire });
+          // ✅ 同时返回 expire / expire_at
+          return jsonResponse({ phone, expire, expire_at: expire, status: 'active' });
         }
         return jsonResponse({ error: phoneData.msg || '取号失败' }, 500);
       }
@@ -455,12 +477,20 @@ export async function onRequest(context) {
               order.status = 'done';
               await kv.put(oid, JSON.stringify(order));
               await addLog(order.phone, oid, 'sms_received');
-              return jsonResponse({ code: digits, status: 'done' });
+              // ✅ 已完成，expire 已无意义，返回 null
+              return jsonResponse({ code: digits, status: 'done', expire: null, expire_at: null });
             }
           }
         } catch(e) {}
 
-        return jsonResponse({ code: null, status: 'active' });
+        // ✅ 未完成时，把当前的 expire_at 也返回，便于前端对齐轮询窗口
+        const activeExpire = (order.status === 'active' && order.expire) ? Number(order.expire) : null;
+        return jsonResponse({
+          code: null,
+          status: 'active',
+          expire: activeExpire,
+          expire_at: activeExpire
+        });
       }
 
       case 'setPhone': {
