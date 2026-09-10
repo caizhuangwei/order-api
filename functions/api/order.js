@@ -433,6 +433,7 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
+      // ✅ 修改后的 getSMS：验证码优先从 msg 取，只认纯数字
       case 'getSMS': {
         const order = await kv.get(oid, { type: 'json' });
         if (!order || !order.phone) return jsonResponse({ error: '订单不存在' }, 404);
@@ -443,13 +444,17 @@ export async function onRequest(context) {
             project_id: order.projectId, phone: order.phone
           });
 
+          // 疾驰返回：成功时 {"code":1, "msg":"123456", "data":null}
+          //           等待时 {"code":0, "msg":"等待"}
           if (smsData.code === 1) {
-            const raw = smsData.data?.code || smsData.data?.sms || smsData.data?.verify_code || smsData.msg || '';
-            if (raw) {
-              order.code = raw; order.status = 'done';
+            const raw = smsData.msg || smsData.data?.code || smsData.data?.sms || '';
+            const digits = String(raw).replace(/\D/g, '');
+            if (digits.length >= 4) {
+              order.code = digits;
+              order.status = 'done';
               await kv.put(oid, JSON.stringify(order));
               await addLog(order.phone, oid, 'sms_received');
-              return jsonResponse({ code: raw, status: 'done' });
+              return jsonResponse({ code: digits, status: 'done' });
             }
           }
         } catch(e) {}
