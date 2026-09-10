@@ -6,9 +6,11 @@ export async function onRequest(context) {
 
   // ========== 疾驰短信配置（写死在后端） ==========
   const JICHI = {
-    domain: 'https://www.jichisms.com',   // ✅ 加 www，避免 301 跳转丢请求体
+    domain: 'https://www.jichisms.com',
     fcToken: 'cf8c4f42d69b43a125210f27343ad81f'
   };
+
+  const PHONE_TTL_MS = 180 * 1000;   // ✅ 手机号有效期 180 秒
 
   const poolActions = [
     'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
@@ -375,7 +377,8 @@ export async function onRequest(context) {
         if (available.length > 0) {
           const chosen = available[Math.floor(Math.random() * available.length)];
           const phone = chosen.phone;
-          const expire = Date.now() + 60 * 1000;
+          // ✅ 改成 180 秒
+          const expire = Date.now() + PHONE_TTL_MS;
           chosen.status = 'in_use'; chosen.oid = oid; chosen.expire = expire;
           await savePool(pool);
           const newOrder = { ...order, phone, expire, status: 'active', code: null, fromPool: true };
@@ -400,7 +403,8 @@ export async function onRequest(context) {
 
         if (phoneData.code === 1) {
           const phone = phoneData.data?.phone || phoneData.data?.mobile;
-          const expire = Date.now() + 60 * 1000;
+          // ✅ 改成 180 秒
+          const expire = Date.now() + PHONE_TTL_MS;
           const newOrder = { ...order, phone, expire, status: 'active', code: null, fromPool: false };
           await kv.put(oid, JSON.stringify(newOrder));
           return jsonResponse({ phone, expire });
@@ -433,7 +437,6 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ✅ 修改后的 getSMS：验证码优先从 msg 取，只认纯数字
       case 'getSMS': {
         const order = await kv.get(oid, { type: 'json' });
         if (!order || !order.phone) return jsonResponse({ error: '订单不存在' }, 404);
@@ -444,8 +447,6 @@ export async function onRequest(context) {
             project_id: order.projectId, phone: order.phone
           });
 
-          // 疾驰返回：成功时 {"code":1, "msg":"123456", "data":null}
-          //           等待时 {"code":0, "msg":"等待"}
           if (smsData.code === 1) {
             const raw = smsData.msg || smsData.data?.code || smsData.data?.sms || '';
             const digits = String(raw).replace(/\D/g, '');
