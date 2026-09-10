@@ -17,7 +17,10 @@ export async function onRequest(context) {
     'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard',
     'createOrder',
     'listActiveOrders',
-    'releaseAllOrders'
+    'releaseAllOrders',
+    'projects',        // ✅ 新增
+    'carrierCodes',    // ✅ 新增
+    'listOrders'       // ✅ 新增
   ];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
@@ -105,6 +108,58 @@ export async function onRequest(context) {
   try {
     switch (action) {
 
+      // ========== ✅ 新增：代理疾驰项目列表 ==========
+      case 'projects': {
+        const page = url.searchParams.get('page') || '1';
+        const pagesize = url.searchParams.get('pagesize') || '100';
+        const projectName = url.searchParams.get('project_name') || '';
+        let endpoint = `/api/user/projects?page=${page}&pagesize=${pagesize}`;
+        if (projectName) endpoint += `&project_name=${encodeURIComponent(projectName)}`;
+        try {
+          const data = await jichiRequest(endpoint, 'GET');
+          return jsonResponse(data);
+        } catch (e) {
+          return jsonResponse({ error: e.message }, 500);
+        }
+      }
+
+      // ========== ✅ 新增：代理疾驰卡商列表 ==========
+      case 'carrierCodes': {
+        const projectId = url.searchParams.get('project_id');
+        if (!projectId) return jsonResponse({ error: '缺少项目ID' }, 400);
+        try {
+          const data = await jichiRequest(
+            `/api/index/getCodeStoreByProjectId?project_id=${projectId}&page=1&limit=50`,
+            'GET'
+          );
+          return jsonResponse(data);
+        } catch (e) {
+          return jsonResponse({ error: e.message }, 500);
+        }
+      }
+
+      // ========== ✅ 新增：列出所有订单（含未取号的） ==========
+      case 'listOrders': {
+        const keys = await kv.list();
+        const orders = [];
+        for (const key of keys.keys) {
+          if (key.name.startsWith('__') || key.name === POOL_KEY || key.name === LOG_KEY || key.name === CARD_KEY) continue;
+          const order = await kv.get(key.name, { type: 'json' });
+          if (order) {
+            orders.push({
+              oid: key.name,
+              status: order.status,
+              phone: order.phone || null,
+              projectId: order.projectId || null,
+              codeId: order.codeId || null
+            });
+          }
+        }
+        // 按 oid 倒序（最新的在前面）
+        orders.sort((a, b) => b.oid.localeCompare(a.oid));
+        return jsonResponse({ orders });
+      }
+
       // ========== 列出活跃订单 ==========
       case 'listActiveOrders': {
         const keys = await kv.list();
@@ -141,7 +196,6 @@ export async function onRequest(context) {
         let existing = await kv.get(oid, { type: 'json' });
         if (existing) return jsonResponse({ error: '订单已存在' }, 400);
 
-        // 从 URL 读取项目ID和卡商ID
         const projectId = url.searchParams.get('project_id') || '';
         const codeId = url.searchParams.get('code_id') || '';
 
@@ -369,7 +423,6 @@ export async function onRequest(context) {
           return jsonResponse({ error: '订单未配置项目ID' }, 400);
         }
 
-        // 判断是官方引擎还是卡商引擎
         let phoneData;
         if (order.codeId) {
           // 卡商引擎
