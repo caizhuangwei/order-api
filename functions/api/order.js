@@ -198,10 +198,15 @@ export async function onRequest(context) {
 
         const projectId = url.searchParams.get('project_id') || '';
         const codeId = url.searchParams.get('code_id') || '';
+        // 新增：读取指定手机号、号段、卡号类型
+        const specifiedPhone = url.searchParams.get('phone') || '';
+        const specifiedHd = url.searchParams.get('hd') || '';
+        const specifiedAscription = url.searchParams.get('ascription') || '';
 
         const newOrder = {
           status: 'new', phone: null, expire: null, code: null,
-          fromPool: false, projectId, codeId
+          fromPool: false, projectId, codeId,
+          specifiedPhone, specifiedHd, specifiedAscription   // 保存到订单中
         };
         await kv.put(oid, JSON.stringify(newOrder));
         return jsonResponse({ success: true });
@@ -394,33 +399,49 @@ export async function onRequest(context) {
           }
         }
 
-        let pool = await getPool();
-        const available = pool.filter(p => p.status === 'available');
-        if (available.length > 0) {
-          const chosen = available[Math.floor(Math.random() * available.length)];
-          const phone = chosen.phone;
-          const expire = Date.now() + PHONE_TTL_MS;
-          chosen.status = 'in_use'; chosen.oid = oid; chosen.expire = expire;
-          await savePool(pool);
-          const newOrder = { ...order, phone, expire, status: 'active', code: null, fromPool: true };
-          await kv.put(oid, JSON.stringify(newOrder));
-          // ✅ 同时返回 expire / expire_at
-          return jsonResponse({ phone, expire, expire_at: expire, status: 'active' });
+        // 判断是否指定了号码、号段或卡号类型
+        const hasSpecified = order.specifiedPhone || order.specifiedHd || order.specifiedAscription;
+
+        // 如果没有指定任何条件，才尝试从本地号码池取号
+        if (!hasSpecified) {
+          let pool = await getPool();
+          const available = pool.filter(p => p.status === 'available');
+          if (available.length > 0) {
+            const chosen = available[Math.floor(Math.random() * available.length)];
+            const phone = chosen.phone;
+            const expire = Date.now() + PHONE_TTL_MS;
+            chosen.status = 'in_use'; chosen.oid = oid; chosen.expire = expire;
+            await savePool(pool);
+            const newOrder = { ...order, phone, expire, status: 'active', code: null, fromPool: true };
+            await kv.put(oid, JSON.stringify(newOrder));
+            // ✅ 同时返回 expire / expire_at
+            return jsonResponse({ phone, expire, expire_at: expire, status: 'active' });
+          }
         }
 
         if (!order.projectId) {
           return jsonResponse({ error: '订单未配置项目ID' }, 400);
         }
 
+        // 构造远程取号参数
+        const remoteParams = { project_id: order.projectId };
+        if (order.codeId) {
+          remoteParams.code_id = order.codeId;
+          if (order.specifiedPhone) remoteParams.phone = order.specifiedPhone;
+          if (order.specifiedHd) remoteParams.hd = order.specifiedHd;
+          if (order.specifiedAscription) remoteParams.ascription = order.specifiedAscription;
+        } else {
+          // 官方引擎也可能支持这些参数，一并传递
+          if (order.specifiedPhone) remoteParams.phone = order.specifiedPhone;
+          if (order.specifiedHd) remoteParams.hd = order.specifiedHd;
+          if (order.specifiedAscription) remoteParams.ascription = order.specifiedAscription;
+        }
+
         let phoneData;
         if (order.codeId) {
-          phoneData = await jichiRequest('/api/user/getCardEnginePhone', 'POST', {
-            project_id: order.projectId, code_id: order.codeId
-          });
+          phoneData = await jichiRequest('/api/user/getCardEnginePhone', 'POST', remoteParams);
         } else {
-          phoneData = await jichiRequest('/api/user/getPhone', 'POST', {
-            project_id: order.projectId
-          });
+          phoneData = await jichiRequest('/api/user/getPhone', 'POST', remoteParams);
         }
 
         if (phoneData.code === 1) {
