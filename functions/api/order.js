@@ -6,11 +6,10 @@ export async function onRequest(context) {
 
   // ========== 疾驰短信配置（写死在后端） ==========
   const JICHI = {
-    domain: 'https://jichisms.com',
+    domain: 'https://www.jichisms.com',   // ✅ 加 www，避免 301 跳转丢请求体
     fcToken: 'cf8c4f42d69b43a125210f27343ad81f'
   };
 
-  // 所有无需 oid 的接口
   const poolActions = [
     'addPhone', 'removePhone', 'poolList', 'resetPool', 'releasePoolPhone', 'logList',
     'getBalance', 'lockOrder', 'blockPhone',
@@ -18,9 +17,9 @@ export async function onRequest(context) {
     'createOrder',
     'listActiveOrders',
     'releaseAllOrders',
-    'projects',        // ✅ 新增
-    'carrierCodes',    // ✅ 新增
-    'listOrders'       // ✅ 新增
+    'projects',
+    'carrierCodes',
+    'listOrders'
   ];
   if (!oid && !poolActions.includes(action)) {
     return jsonResponse({ error: '缺少订单ID' }, 400);
@@ -59,10 +58,10 @@ export async function onRequest(context) {
     return `JC-${segment()}-${segment()}`;
   }
 
-  // ========== 疾驰通用请求封装 ==========
+  // ========== 疾驰通用请求封装（自动重定向 + 保留请求体） ==========
   async function jichiRequest(endpoint, method = 'GET', body = null) {
     const headers = { 'fcToken': JICHI.fcToken };
-    const options = { method, headers };
+    const options = { method, headers, redirect: 'follow' };
     if (body) {
       headers['Content-Type'] = 'application/x-www-form-urlencoded';
       options.body = new URLSearchParams(body).toString();
@@ -72,7 +71,6 @@ export async function onRequest(context) {
     return await resp.json();
   }
 
-  // ========== 辅助函数：释放单个订单 ==========
   async function releaseOrderByOid(oid) {
     let order = await kv.get(oid, { type: 'json' });
     if (!order) return { success: false, error: '订单不存在' };
@@ -83,24 +81,18 @@ export async function onRequest(context) {
       let pool = await getPool();
       const entry = pool.find(p => p.phone === order.phone);
       if (entry && entry.status === 'in_use') {
-        entry.status = 'available';
-        entry.oid = null;
-        entry.expire = null;
+        entry.status = 'available'; entry.oid = null; entry.expire = null;
         await savePool(pool);
       }
     } else if (order.phone) {
       try {
         await jichiRequest('/api/user/releasePhone', 'POST', {
-          project_id: order.projectId || '',
-          phone: order.phone
+          project_id: order.projectId || '', phone: order.phone
         });
       } catch(e) {}
     }
 
-    order.status = 'released';
-    order.phone = null;
-    order.expire = null;
-    order.code = null;
+    order.status = 'released'; order.phone = null; order.expire = null; order.code = null;
     await kv.put(oid, JSON.stringify(order));
     return { success: true };
   }
@@ -108,7 +100,6 @@ export async function onRequest(context) {
   try {
     switch (action) {
 
-      // ========== ✅ 新增：代理疾驰项目列表 ==========
       case 'projects': {
         const page = url.searchParams.get('page') || '1';
         const pagesize = url.searchParams.get('pagesize') || '100';
@@ -123,7 +114,6 @@ export async function onRequest(context) {
         }
       }
 
-      // ========== ✅ 新增：代理疾驰卡商列表 ==========
       case 'carrierCodes': {
         const projectId = url.searchParams.get('project_id');
         if (!projectId) return jsonResponse({ error: '缺少项目ID' }, 400);
@@ -138,7 +128,6 @@ export async function onRequest(context) {
         }
       }
 
-      // ========== ✅ 新增：列出所有订单（含未取号的） ==========
       case 'listOrders': {
         const keys = await kv.list();
         const orders = [];
@@ -147,20 +136,17 @@ export async function onRequest(context) {
           const order = await kv.get(key.name, { type: 'json' });
           if (order) {
             orders.push({
-              oid: key.name,
-              status: order.status,
+              oid: key.name, status: order.status,
               phone: order.phone || null,
               projectId: order.projectId || null,
               codeId: order.codeId || null
             });
           }
         }
-        // 按 oid 倒序（最新的在前面）
         orders.sort((a, b) => b.oid.localeCompare(a.oid));
         return jsonResponse({ orders });
       }
 
-      // ========== 列出活跃订单 ==========
       case 'listActiveOrders': {
         const keys = await kv.list();
         const orders = [];
@@ -174,7 +160,6 @@ export async function onRequest(context) {
         return jsonResponse({ orders });
       }
 
-      // ========== 一键释放全部活跃订单 ==========
       case 'releaseAllOrders': {
         const keys = await kv.list();
         const results = [];
@@ -190,7 +175,6 @@ export async function onRequest(context) {
         return jsonResponse({ success: true, released: successCount, total: results.length, details: results });
       }
 
-      // ========== 预创建订单（带项目ID） ==========
       case 'createOrder': {
         if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
         let existing = await kv.get(oid, { type: 'json' });
@@ -200,19 +184,13 @@ export async function onRequest(context) {
         const codeId = url.searchParams.get('code_id') || '';
 
         const newOrder = {
-          status: 'new',
-          phone: null,
-          expire: null,
-          code: null,
-          fromPool: false,
-          projectId,
-          codeId
+          status: 'new', phone: null, expire: null, code: null,
+          fromPool: false, projectId, codeId
         };
         await kv.put(oid, JSON.stringify(newOrder));
         return jsonResponse({ success: true });
       }
 
-      // ========== 卡密系统 ==========
       case 'generateCard': {
         const type = url.searchParams.get('type') || 'trial';
         const count = parseInt(url.searchParams.get('count')) || 1;
@@ -240,8 +218,7 @@ export async function onRequest(context) {
           return jsonResponse({ success: true, expire_at: card.expire_at });
         }
         const now = Date.now();
-        card.activated = true;
-        card.activated_at = now;
+        card.activated = true; card.activated_at = now;
         card.expire_at = now + card.duration * 86400 * 1000;
         await saveCards(cards);
         return jsonResponse({ success: true, expire_at: card.expire_at });
@@ -272,7 +249,6 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== 查询余额（疾驰） ==========
       case 'getBalance': {
         try {
           const data = await jichiRequest('/api/user/getMoney', 'GET');
@@ -285,7 +261,6 @@ export async function onRequest(context) {
         }
       }
 
-      // ========== 拉黑手机号 ==========
       case 'blockPhone': {
         const phone = url.searchParams.get('phone');
         if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
@@ -295,7 +270,6 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== 管理员强制释放订单 ==========
       case 'lockOrder': {
         if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
         const result = await releaseOrderByOid(oid);
@@ -303,7 +277,6 @@ export async function onRequest(context) {
         return jsonResponse({ error: result.error }, 400);
       }
 
-      // ========== 号码池管理 ==========
       case 'poolList': { const pool = await getPool(); return jsonResponse({ pool }); }
       case 'addPhone': {
         const phone = url.searchParams.get('phone');
@@ -356,13 +329,11 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== 日志列表 ==========
       case 'logList': {
         const logs = await getLogs();
         return jsonResponse({ logs: logs.reverse() });
       }
 
-      // ========== 订单状态 ==========
       case 'status': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ status: 'invalid', phone: null, expire: null, code: null });
@@ -381,7 +352,6 @@ export async function onRequest(context) {
         return jsonResponse(order);
       }
 
-      // ========== 获取手机号（疾驰取号） ==========
       case 'getPhone': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ error: '订单不存在或已失效' }, 404);
@@ -391,7 +361,6 @@ export async function onRequest(context) {
           return jsonResponse({ phone: order.phone, expire: order.expire });
         }
 
-        // 先释放旧号码
         if (order.phone && order.fromPool) {
           let pool = await getPool();
           const entry = pool.find(p => p.phone === order.phone);
@@ -401,37 +370,29 @@ export async function onRequest(context) {
           }
         }
 
-        // 优先从号码池取
         let pool = await getPool();
         const available = pool.filter(p => p.status === 'available');
         if (available.length > 0) {
           const chosen = available[Math.floor(Math.random() * available.length)];
           const phone = chosen.phone;
           const expire = Date.now() + 60 * 1000;
-          chosen.status = 'in_use';
-          chosen.oid = oid;
-          chosen.expire = expire;
+          chosen.status = 'in_use'; chosen.oid = oid; chosen.expire = expire;
           await savePool(pool);
-
           const newOrder = { ...order, phone, expire, status: 'active', code: null, fromPool: true };
           await kv.put(oid, JSON.stringify(newOrder));
           return jsonResponse({ phone, expire });
         }
 
-        // 从疾驰取号
         if (!order.projectId) {
           return jsonResponse({ error: '订单未配置项目ID' }, 400);
         }
 
         let phoneData;
         if (order.codeId) {
-          // 卡商引擎
           phoneData = await jichiRequest('/api/user/getCardEnginePhone', 'POST', {
-            project_id: order.projectId,
-            code_id: order.codeId
+            project_id: order.projectId, code_id: order.codeId
           });
         } else {
-          // 官方引擎
           phoneData = await jichiRequest('/api/user/getPhone', 'POST', {
             project_id: order.projectId
           });
@@ -447,7 +408,6 @@ export async function onRequest(context) {
         return jsonResponse({ error: phoneData.msg || '取号失败' }, 500);
       }
 
-      // ========== 释放（买家释放） ==========
       case 'release': {
         let order = await kv.get(oid, { type: 'json' });
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
@@ -463,8 +423,7 @@ export async function onRequest(context) {
         } else if (order.phone && order.projectId) {
           try {
             await jichiRequest('/api/user/releasePhone', 'POST', {
-              project_id: order.projectId,
-              phone: order.phone
+              project_id: order.projectId, phone: order.phone
             });
           } catch(e) {}
         }
@@ -474,7 +433,6 @@ export async function onRequest(context) {
         return jsonResponse({ success: true });
       }
 
-      // ========== 获取验证码 ==========
       case 'getSMS': {
         const order = await kv.get(oid, { type: 'json' });
         if (!order || !order.phone) return jsonResponse({ error: '订单不存在' }, 404);
@@ -482,15 +440,13 @@ export async function onRequest(context) {
 
         try {
           const smsData = await jichiRequest('/api/user/getVerifyCode', 'POST', {
-            project_id: order.projectId,
-            phone: order.phone
+            project_id: order.projectId, phone: order.phone
           });
 
           if (smsData.code === 1) {
             const raw = smsData.data?.code || smsData.data?.sms || smsData.data?.verify_code || smsData.msg || '';
             if (raw) {
-              order.code = raw;
-              order.status = 'done';
+              order.code = raw; order.status = 'done';
               await kv.put(oid, JSON.stringify(order));
               await addLog(order.phone, oid, 'sms_received');
               return jsonResponse({ code: raw, status: 'done' });
