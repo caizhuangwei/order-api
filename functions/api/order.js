@@ -5,16 +5,35 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 启用跨域中间件与 JSON 解析
-app.use(cors());
+// 配置 CORS，精确允许你的 Cloudflare Pages 域名（以及本地测试环境）
+const allowedOrigins = [
+  'https://order-api.pages.dev',
+  'http://localhost:3000',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // 允许无 origin 的请求（如移动端应用或 curl），或在白名单内的域名
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS 策略已拦截该来源的请求'));
+    }
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
 app.use(express.json());
 
-// 第三方接码平台基础地址
+// 第三方接码平台地址
 const UPSTREAM_HOST = 'http://api.tyasdbsd.cyou:6722';
 
 /**
- * 辅助函数：针对该平台带有两个问号的特殊 URL 格式进行请求
- * 格式例如: /nats?apilogin?us=xxx&pw=yyy
+ * 辅助函数：处理特殊 URL 结构 (/nats?action?query)
  */
 async function callUpstream(action, params) {
   const queryString = new URLSearchParams(params).toString();
@@ -29,16 +48,13 @@ async function callUpstream(action, params) {
   return response.data;
 }
 
-// ----------------------------------------------------
-// 接口 1: 登录获取 Token (/api/login)
-// ----------------------------------------------------
+// 接口 1: 登录获取 Token
 app.post('/api/login', async (req, res) => {
   try {
     const { us, pw } = req.body;
     if (!us || !pw) {
       return res.status(400).json({ stat: false, message: '账号或密码不能为空' });
     }
-
     const data = await callUpstream('apilogin', { us, pw });
     return res.json(data);
   } catch (err) {
@@ -47,25 +63,16 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// ----------------------------------------------------
-// 接口 2: 获取手机号 (/api/get-phone)
-// 注意：上游限制调用频率需大于 2 秒一次
-// ----------------------------------------------------
+// 接口 2: 获取手机号
 app.get('/api/get-phone', async (req, res) => {
   try {
     const { token, id, haomaku, phone } = req.query;
-
     if (!token || !id || !haomaku) {
-      return res.status(400).json({ 
-        stat: false, 
-        message: '参数缺失: token, id, haomaku 均为必填参数' 
-      });
+      return res.status(400).json({ stat: false, message: '参数缺失: token, id, haomaku 为必填项' });
     }
 
     const params = { token, haomaku, id };
-    if (phone) {
-      params.phone = phone; // 支持指定号码
-    }
+    if (phone) params.phone = phone;
 
     const data = await callUpstream('apinumber', params);
     return res.json(data);
@@ -75,23 +82,16 @@ app.get('/api/get-phone', async (req, res) => {
   }
 });
 
-// ----------------------------------------------------
-// 接口 3: 轮询短信验证码 (/api/get-sms)
-// ----------------------------------------------------
+// 接口 3: 轮询短信
 app.get('/api/get-sms', async (req, res) => {
   try {
     const { token, id, phone } = req.query;
-
     if (!token || !id || !phone) {
-      return res.status(400).json({ 
-        stat: false, 
-        message: '参数缺失: token, id, phone 为必填参数' 
-      });
+      return res.status(400).json({ stat: false, message: '参数缺失: token, id, phone 为必填项' });
     }
 
     const data = await callUpstream('apirequirement', { token, id, phone });
 
-    // 可选：在此处给前端做一层提取纯数字验证码的处理
     if (data.code === 200 && data.data) {
       const matched = data.data.match(/\b\d{4,6}\b/);
       data.extracted_code = matched ? matched[0] : null;
@@ -104,7 +104,11 @@ app.get('/api/get-sms', async (req, res) => {
   }
 });
 
-// 启动服务
+// 健康检测探针（方便直接在浏览器验证后端是否通畅）
+app.get('/health', (req, res) => {
+  res.send('Server is running normally');
+});
+
 app.listen(PORT, () => {
-  console.log(`接码后端服务已启动: http://localhost:${PORT}`);
+  console.log(`接码后端服务已就绪，端口: ${PORT}`);
 });
