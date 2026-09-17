@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>接码链接生成后台</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }
+    .card { background: #fff; width: 100%; max-width: 580px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.06); padding: 28px; }
+    h2 { font-size: 20px; color: #1f1f1f; margin-bottom: 20px; border-bottom: 1px solid #f0f0f0; padding-bottom: 12px; }
+    .form-group { margin-bottom: 20px; }
+    label { display: block; font-size: 14px; font-weight: 600; color: #434343; margin-bottom: 8px; }
+    textarea { width: 100%; height: 90px; padding: 10px 12px; font-size: 14px; border: 1px solid #d9d9d9; border-radius: 8px; resize: vertical; outline: none; transition: border-color 0.2s; }
+    textarea:focus { border-color: #1677ff; }
+    .btn-main { width: 100%; background: #1677ff; color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .btn-main:hover { background: #0958d9; }
+    .btn-main:disabled { background: #a0c4ff; cursor: not-allowed; }
+    .result-box { margin-top: 24px; padding: 16px; background: #fafafa; border: 1px dashed #d9d9d9; border-radius: 8px; display: none; }
+    .result-item { font-size: 13px; color: #595959; margin-bottom: 6px; }
+    .link-input { width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid #d9d9d9; border-radius: 6px; margin: 8px 0 12px 0; background: #fff; }
+    .btn-copy { background: #52c41a; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; width: 100%; font-weight: 500; }
+    .btn-copy:hover { background: #389e0d; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>接码订单链接生成器</h2>
+
+  <div class="form-group">
+    <label>粘贴完整订单数据：</label>
+    <textarea id="order-input" placeholder="例如：98474732----http://54.169.181.40:8082/api/code/..."></textarea>
+  </div>
+
+  <button class="btn-main" id="gen-btn" onclick="generateLink()">一键生成买家链接</button>
+
+  <div class="result-box" id="result-box">
+    <div class="result-item"><strong>解析手机号：</strong><span id="res-phone">--</span></div>
+    <div class="result-item"><strong>买家专属访问链接：</strong></div>
+    <input type="text" id="final-link" class="link-input" readonly>
+    <button class="btn-copy" onclick="copyBuyerLink()">复制买家链接</button>
+  </div>
+</div>
+
+<script>
+  async function generateLink() {
+    const raw = document.getElementById('order-input').value.trim();
+    if (!raw) {
+      alert('请先输入订单内容');
+      return;
+    }
+
+    const parts = raw.split('----');
+    if (parts.length < 2) {
+      alert('数据格式不正确，请确保包含 "----" 分隔符');
+      return;
+    }
+
+    const phone = parts[0].trim();
+    const apiUrl = parts[1].trim();
+
+    const btn = document.getElementById('gen-btn');
+    btn.disabled = true;
+    btn.innerText = '正在生成...';
+
+    try {
+      const resp = await fetch('/api/save-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, api: apiUrl })
+      });
+      
+      // --- 修改开始：安全解析后端响应 ---
+      const text = await resp.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (e) {
+        // 如果解析失败，说明后端没返回 JSON（大概率是 404 或 500 错误页面）
+        throw new Error(`后端未返回有效JSON（状态码 ${resp.status}）。返回内容：${text.substring(0, 100)}...`);
+      }
+      // --- 修改结束 ---
+
+      if (!resp.ok) {
+        throw new Error(result.error || '保存失败');
+      }
+
+      const id = result.id;
+
+      // 获取当前网站的基础路径，拼接 sms.html
+      const basePath = window.location.href.substring(0, window.location.href.lastIndexOf('/'));
+      const targetLink = `${basePath}/sms.html?id=${id}`;
+
+      document.getElementById('res-phone').innerText = phone;
+      document.getElementById('final-link').value = targetLink;
+      document.getElementById('result-box').style.display = 'block';
+    } catch (err) {
+      alert('生成链接失败：' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerText = '一键生成买家链接';
+    }
+  }
+
+  function copyBuyerLink() {
+    const input = document.getElementById('final-link');
+    input.select();
+    navigator.clipboard.writeText(input.value).then(() => {
+      alert('买家链接已复制！可直接发送给买家');
+    });
+  }
+</script>
+
+</body>
+</html>
