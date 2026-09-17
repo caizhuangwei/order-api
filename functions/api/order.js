@@ -1,114 +1,53 @@
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
+export default {
+  async fetch(request, env, ctx) {
+    // 1. 设置跨域头，允许你的前端网页调用这个接口
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*", // 如果想更安全，可以把 * 换成你前端的域名
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// 配置 CORS，精确允许你的 Cloudflare Pages 域名（以及本地测试环境）
-const allowedOrigins = [
-  'https://order-api.pages.dev',
-  'http://localhost:3000',
-  'http://localhost:5500',
-  'http://127.0.0.1:5500'
-];
-
-app.use(cors({
-  origin: function (origin, callback) {
-    // 允许无 origin 的请求（如移动端应用或 curl），或在白名单内的域名
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('CORS 策略已拦截该来源的请求'));
+    // 2. 响应浏览器的预检请求 (OPTIONS)
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: corsHeaders });
     }
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
 
-app.use(express.json());
+    // 3. 处理前端发来的实际请求 (POST)
+    if (request.method === "POST") {
+      try {
+        // 获取前端传过来的 JSON 数据，里面包含了接码平台的链接
+        const body = await request.json();
+        const targetUrl = body.targetUrl;
 
-// 第三方接码平台地址
-const UPSTREAM_HOST = 'http://api.tyasdbsd.cyou:6722';
+        if (!targetUrl) {
+          return new Response("缺少目标链接 targetUrl", { 
+            status: 400, 
+            headers: corsHeaders 
+          });
+        }
 
-/**
- * 辅助函数：处理特殊 URL 结构 (/nats?action?query)
- */
-async function callUpstream(action, params) {
-  const queryString = new URLSearchParams(params).toString();
-  const targetUrl = `${UPSTREAM_HOST}/nats?${action}?${queryString}`;
-  
-  const response = await axios.get(targetUrl, {
-    timeout: 10000,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+        // 4. Cloudflare Worker 代为请求接码平台 API
+        const apiResponse = await fetch(targetUrl);
+        const data = await apiResponse.text(); // 获取返回的纯文本或JSON内容
+
+        // 5. 将接码平台的数据返回给前端
+        return new Response(data, {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "text/plain;charset=UTF-8"
+          }
+        });
+
+      } catch (error) {
+        return new Response("后端请求出错: " + error.message, { 
+          status: 500, 
+          headers: corsHeaders 
+        });
+      }
     }
-  });
-  return response.data;
-}
 
-// 接口 1: 登录获取 Token
-app.post('/api/login', async (req, res) => {
-  try {
-    const { us, pw } = req.body;
-    if (!us || !pw) {
-      return res.status(400).json({ stat: false, message: '账号或密码不能为空' });
-    }
-    const data = await callUpstream('apilogin', { us, pw });
-    return res.json(data);
-  } catch (err) {
-    console.error('[Login Error]:', err.message);
-    return res.status(500).json({ stat: false, message: '请求上游接口失败', error: err.message });
+    // 其他请求统一返回 404
+    return new Response("Not Found", { status: 404, headers: corsHeaders });
   }
-});
-
-// 接口 2: 获取手机号
-app.get('/api/get-phone', async (req, res) => {
-  try {
-    const { token, id, haomaku, phone } = req.query;
-    if (!token || !id || !haomaku) {
-      return res.status(400).json({ stat: false, message: '参数缺失: token, id, haomaku 为必填项' });
-    }
-
-    const params = { token, haomaku, id };
-    if (phone) params.phone = phone;
-
-    const data = await callUpstream('apinumber', params);
-    return res.json(data);
-  } catch (err) {
-    console.error('[Get Phone Error]:', err.message);
-    return res.status(500).json({ stat: false, message: '获取号码失败', error: err.message });
-  }
-});
-
-// 接口 3: 轮询短信
-app.get('/api/get-sms', async (req, res) => {
-  try {
-    const { token, id, phone } = req.query;
-    if (!token || !id || !phone) {
-      return res.status(400).json({ stat: false, message: '参数缺失: token, id, phone 为必填项' });
-    }
-
-    const data = await callUpstream('apirequirement', { token, id, phone });
-
-    if (data.code === 200 && data.data) {
-      const matched = data.data.match(/\b\d{4,6}\b/);
-      data.extracted_code = matched ? matched[0] : null;
-    }
-
-    return res.json(data);
-  } catch (err) {
-    console.error('[Get SMS Error]:', err.message);
-    return res.status(500).json({ stat: false, message: '拉取短信失败', error: err.message });
-  }
-});
-
-// 健康检测探针（方便直接在浏览器验证后端是否通畅）
-app.get('/health', (req, res) => {
-  res.send('Server is running normally');
-});
-
-app.listen(PORT, () => {
-  console.log(`接码后端服务已就绪，端口: ${PORT}`);
-});
+};
