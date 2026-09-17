@@ -1,53 +1,62 @@
-export default {
-  async fetch(request, env, ctx) {
-    // 1. 设置跨域头，允许你的前端网页调用这个接口
+export async function onRequest(context) {
+    const { request, env } = context;
+    const url = new URL(request.url);
+
+    // 允许前端跨域
     const corsHeaders = {
-      "Access-Control-Allow-Origin": "*", // 如果想更安全，可以把 * 换成你前端的域名
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
     };
 
-    // 2. 响应浏览器的预检请求 (OPTIONS)
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
+    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+    if (!env.ORDER_KV) {
+        return Response.json({ success: false, error: '后端暂未绑定 KV 数据库' }, { headers: corsHeaders });
     }
 
-    // 3. 处理前端发来的实际请求 (POST)
-    if (request.method === "POST") {
-      try {
-        // 获取前端传过来的 JSON 数据，里面包含了接码平台的链接
-        const body = await request.json();
-        const targetUrl = body.targetUrl;
-
-        if (!targetUrl) {
-          return new Response("缺少目标链接 targetUrl", { 
-            status: 400, 
-            headers: corsHeaders 
-          });
+    try {
+        // 1. 处理 POST 请求：管理端保存数据 (解决超长链接问题)
+        if (request.method === 'POST') {
+            const body = await request.json();
+            
+            if (body.action === 'saveSellerLink') {
+                if (!body.oid || !body.link || !body.phone) {
+                    return Response.json({ success: false, error: '参数不完整' }, { headers: corsHeaders });
+                }
+                // 存入 KV 数据库，24小时后自动清理
+                await env.ORDER_KV.put(body.oid, JSON.stringify({ phone: body.phone, link: body.link }), { expirationTtl: 86400 });
+                return Response.json({ success: true }, { headers: corsHeaders });
+            }
         }
 
-        // 4. Cloudflare Worker 代为请求接码平台 API
-        const apiResponse = await fetch(targetUrl);
-        const data = await apiResponse.text(); // 获取返回的纯文本或JSON内容
+        // 2. 处理 GET 请求：买家端轮询验证码
+        if (request.method === 'GET') {
+            const action = url.searchParams.get('action');
+            
+            if (action === 'getSellerCode') {
+                const oid = url.searchParams.get('oid');
+                if (!oid) return Response.json({ success: false, error: '缺少 oid' }, { headers: corsHeaders });
 
-        // 5. 将接码平台的数据返回给前端
-        return new Response(data, {
-          status: 200,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "text/plain;charset=UTF-8"
-          }
-        });
+                const dataStr = await env.ORDER_KV.get(oid);
+                if (!dataStr) return Response.json({ success: false, error: '订单不存在或已过期' }, { headers: corsHeaders });
 
-      } catch (error) {
-        return new Response("后端请求出错: " + error.message, { 
-          status: 500, 
-          headers: corsHeaders 
-        });
-      }
+                const { phone, link } = JSON.parse(dataStr);
+
+                try {
+                    // 后端代为请求卖家接口
+                    const r = await fetch(link);
+                    const sellerRes = await r.json();
+                    return Response.json({ success: true, phone, sellerRes }, { headers: corsHeaders });
+                } catch (e) {
+                    return Response.json({ success: false, phone, error: '代理请求卖家接口失败' }, { headers: corsHeaders });
+                }
+            }
+        }
+
+        return Response.json({ success: false, error: '未知的请求类型' }, { headers: corsHeaders });
+
+    } catch (error) {
+        return Response.json({ success: false, error: error.message }, { headers: corsHeaders });
     }
-
-    // 其他请求统一返回 404
-    return new Response("Not Found", { status: 404, headers: corsHeaders });
-  }
-};
+}
