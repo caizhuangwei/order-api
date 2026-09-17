@@ -1,9 +1,8 @@
 export async function onRequest(context) {
-  const { request } = context;
+  const { request, env } = context;
   const { searchParams } = new URL(request.url);
-  const targetUrl = searchParams.get('url');
+  const id = searchParams.get('id');
 
-  // 跨域响应头设置
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -11,21 +10,25 @@ export async function onRequest(context) {
     'Content-Type': 'application/json; charset=utf-8'
   };
 
-  // 处理浏览器预检 OPTIONS 请求
   if (request.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  if (!targetUrl) {
-    return new Response(JSON.stringify({ error: '缺少 url 参数' }), {
-      status: 400,
-      headers: corsHeaders
-    });
+  if (!id) {
+    return new Response(JSON.stringify({ error: '缺少 id 参数' }), { status: 400, headers: corsHeaders });
   }
 
   try {
-    // 由 Cloudflare 的边缘节点去代理抓取接码数据
-    const res = await fetch(targetUrl, {
+    // 从 KV 读取订单信息
+    const orderData = await env.ORDER_KV.get(id);
+    if (!orderData) {
+      return new Response(JSON.stringify({ error: '订单不存在或已过期' }), { status: 404, headers: corsHeaders });
+    }
+
+    const { phone, api } = JSON.parse(orderData);
+
+    // 代理请求接码平台
+    const res = await fetch(api, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
       }
@@ -33,7 +36,8 @@ export async function onRequest(context) {
 
     const data = await res.text();
 
-    return new Response(data, {
+    // 返回 phone 和原始短信内容，方便前端展示
+    return new Response(JSON.stringify({ phone, sms: data }), {
       status: 200,
       headers: corsHeaders
     });
