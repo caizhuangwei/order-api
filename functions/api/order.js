@@ -7,7 +7,8 @@ export async function onRequest(context) {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': '*',
-    'Content-Type': 'application/json; charset=utf-8'
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'
   };
 
   if (request.method === 'OPTIONS') {
@@ -19,7 +20,6 @@ export async function onRequest(context) {
   }
 
   try {
-    // 从 KV 读取订单信息
     const orderData = await env.ORDER_KV.get(id);
     if (!orderData) {
       return new Response(JSON.stringify({ error: '订单不存在或已过期' }), { status: 404, headers: corsHeaders });
@@ -27,22 +27,22 @@ export async function onRequest(context) {
 
     const { phone, api } = JSON.parse(orderData);
 
-    // 代理请求接码平台
+    // 纯净转发，不加任何多余参数
     const res = await fetch(api, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+      cf: {
+        cacheTtl: 0,
+        cacheEverything: false
       }
     });
 
     const data = await res.text();
 
-    // 返回 phone 和原始短信内容，方便前端展示
-    return new Response(JSON.stringify({ phone, sms: data }), {
+    return new Response(data, {
       status: 200,
       headers: corsHeaders
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: '请求接码平台超时或失败', detail: err.message }), {
+    return new Response(JSON.stringify({ error: '请求接码平台失败', detail: err.message }), {
       status: 500,
       headers: corsHeaders
     });
