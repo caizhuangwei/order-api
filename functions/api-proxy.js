@@ -1,20 +1,19 @@
 export async function onRequest(context) {
-  const requestUrl = new URL(context.request.url);
-  // 获取需要代理的目标地址
-  const targetUrl = requestUrl.searchParams.get('url');
+  const urlObj = new URL(context.request.url);
+  const targetUrl = urlObj.searchParams.get('url');
 
   if (!targetUrl) {
     return new Response('缺少 url 参数', { status: 400 });
   }
 
-  // 拼接 Vercel 代理接口
-  const vercelProxyUrl = 'https://order-api-a6sv-10kytk5hs-caizhuangwei299.vercel.app/api/proxy?url=' + encodeURIComponent(targetUrl);
+  // 服务端代理给 Vercel 函数，Vercel 再去抓取 IP 端口数据
+  const vercelApi = 'https://order-api-a6sv-10kytk5hs-caizhuangwei299.vercel.app/api/proxy?url=' + encodeURIComponent(targetUrl);
 
   try {
-    const res = await fetch(vercelProxyUrl, {
+    const res = await fetch(vercelApi, {
       method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0'
       }
     });
 
@@ -23,12 +22,12 @@ export async function onRequest(context) {
     return new Response(data, {
       status: res.status,
       headers: {
-        'Content-Type': res.headers.get('Content-Type') || 'text/plain; charset=utf-8',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-store, no-cache, must-revalidate'
+        'Content-Type': res.headers.get('Content-Type') || 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store'
       }
     });
   } catch (err) {
-    return new Response('代理异常: ' + err.message, { status: 502 });
+    return new Response('Proxy Error: ' + err.message, { status: 502 });
   }
 }
