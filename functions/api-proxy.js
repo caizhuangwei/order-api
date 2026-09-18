@@ -1,19 +1,20 @@
 export async function onRequest(context) {
-  const url = new URL(context.request.url);
-  const targetUrl = url.searchParams.get('url');
+  const requestUrl = new URL(context.request.url);
+  // 获取需要代理的目标地址
+  const targetUrl = requestUrl.searchParams.get('url');
 
   if (!targetUrl) {
     return new Response('缺少 url 参数', { status: 400 });
   }
 
-  // 拼接 Vercel 代理地址（Cloudflare 服务器在海外，它可以直连 Vercel）
-  const vercelProxy = 'https://order-api-a6sv-efz52366g-caizhuangwei299.vercel.app/api/proxy?url=' + encodeURIComponent(targetUrl);
+  // 拼接 Vercel 代理接口
+  const vercelProxyUrl = 'https://order-api-a6sv-10kytk5hs-caizhuangwei299.vercel.app/api/proxy?url=' + encodeURIComponent(targetUrl);
 
   try {
-    const res = await fetch(vercelProxy, {
-      method: context.request.method,
+    const res = await fetch(vercelProxyUrl, {
+      method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
 
@@ -22,12 +23,12 @@ export async function onRequest(context) {
     return new Response(data, {
       status: res.status,
       headers: {
-        'Access-Control-Allow-Origin': '*',
         'Content-Type': res.headers.get('Content-Type') || 'text/plain; charset=utf-8',
-        'Cache-Control': 'no-store'
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, no-cache, must-revalidate'
       }
     });
   } catch (err) {
-    return new Response('中转失败: ' + err.message, { status: 502 });
+    return new Response('代理异常: ' + err.message, { status: 502 });
   }
 }
