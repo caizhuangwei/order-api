@@ -1,7 +1,10 @@
-// Cloudflare Pages Function
-// 访问方式：/proxy?url=http%3A%2F%2F54.169.181.40%3A8082%2Fapi%2F...
+// functions/proxy.js
+// 访问路径：https://order-api.pages.dev/proxy?url=...
 
-const ALLOWED_HOST = '54.169.181.40:8082'; // 白名单，防止 SSRF
+const ALLOWED_HOSTS = [
+  '54.169.181.40:8082',
+  // 以后如果有其他接口域名，加到这里
+];
 
 export async function onRequest(context) {
   const { request } = context;
@@ -23,15 +26,15 @@ export async function onRequest(context) {
     return json({ error: 'missing url' }, 400);
   }
 
-  // ✅ 白名单校验，防止被当成 SSRF 跳板
+  // 白名单校验，防 SSRF
   let targetUrl;
   try {
     targetUrl = new URL(target);
   } catch {
     return json({ error: 'invalid url' }, 400);
   }
-  if (targetUrl.host !== ALLOWED_HOST) {
-    return json({ error: 'host not allowed' }, 403);
+  if (!ALLOWED_HOSTS.includes(targetUrl.host)) {
+    return json({ error: 'host not allowed: ' + targetUrl.host }, 403);
   }
 
   try {
