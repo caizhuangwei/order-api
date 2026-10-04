@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#f5f6fa">
+<title>验证码接收</title>
+<style>
+  html { scroll-behavior: smooth; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
+    background-attachment: fixed;
+    color: #1c1c1e;
+    padding: 14px 12px 30px; min-height: 100vh;
+    -webkit-font-smoothing: antialiased; font-size: 15px; line-height: 1.5;
+  }
+
+  /* ===== 液态玻璃卡片基础样式 ===== */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.08);
+    border-radius: 16px;
+  }
+
+  /* ===== 报错提示卡片 ===== */
+  .error-tip-card {
+    padding: 14px 14px; margin-bottom: 12px;
+    background: rgba(255, 237, 213, 0.7);
+    border: 1px solid rgba(255, 152, 0, 0.3);
+  }
+  .error-tip-title {
+    display: flex; align-items: center; font-size: 15px; font-weight: 700;
+    color: #d46b08; margin-bottom: 6px;
+  }
+  .error-tip-title svg { margin-right: 6px; flex-shrink: 0; }
+  .error-tip-desc { font-size: 13px; color: #873800; line-height: 1.6; }
+  .error-tip-desc .highlight-red {
+    background: #ff4d4f; color: #fff; padding: 1px 6px; border-radius: 4px;
+    font-weight: 700; display: inline-block; margin: 0 2px;
+  }
+
+  .header {
+    padding: 20px 16px 16px; margin-bottom: 12px;
+    display: flex; flex-direction: column; align-items: center; position: relative;
+  }
+  .status {
+    position: absolute; right: 12px; top: 12px; font-size: 12px;
+    padding: 3px 9px; border-radius: 20px; background: rgba(232, 245, 233, 0.8);
+    color: #2e7d32; white-space: nowrap; font-weight: 600;
+  }
+  .status.loading { background: rgba(255, 248, 225, 0.8); color: #f57c00; }
+  .status.error   { background: rgba(255, 235, 238, 0.8); color: #c62828; }
+  .status.expiring { background: rgba(254, 226, 226, 0.8); color: #b91c1c; }
+
+  .phone-label {
+    font-size: 12px; color: #8e8e93; letter-spacing: 1px;
+    margin-bottom: 6px; margin-top: 6px;
+  }
+
+  /* ===== 区号提示（加大加粗） ===== */
+  .phone-region-tip {
+    background: rgba(255, 59, 48, 0.12);
+    color: #ff3b30;
+    font-size: 18px;
+    font-weight: 900;
+    padding: 10px 18px;
+    border-radius: 16px;
+    margin-bottom: 10px;
+    display: inline-block;
+    text-align: center;
+    line-height: 1.5;
+    letter-spacing: 0.5px;
+    border: 2px solid rgba(255, 59, 48, 0.35);
+    box-shadow: 0 4px 14px rgba(255, 59, 48, 0.15);
+    max-width: 100%;
+  }
+
+  .phone {
+    font-size: 28px; font-weight: 800; color: #1c1c1e; letter-spacing: 2px;
+    font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap;
+    text-align: center; line-height: 1.2; margin-bottom: 12px; word-break: break-all;
+  }
+
+  .btn-copy-phone {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 14px; color: #007aff; background: rgba(0, 122, 255, 0.1); border: none;
+    padding: 9px 22px; border-radius: 999px; cursor: pointer; font-weight: 600;
+    white-space: nowrap; transition: all .2s; user-select: none; min-height: 38px;
+  }
+  .btn-copy-phone:active { background: rgba(0, 122, 255, 0.2); transform: scale(0.98); }
+  .btn-copy-phone.copied { background: rgba(52, 199, 89, 0.15); color: #34c759; }
+
+  /* ===== 警告框 ===== */
+  .fetch-warning {
+    margin-top: 14px; display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255, 59, 48, 0.1);
+    color: #ff3b30;
+    font-size: 13px; font-weight: 700; padding: 9px 20px;
+    border-radius: 999px; text-align: center;
+    line-height: 1.4; max-width: 100%;
+    border: 1px solid rgba(255, 59, 48, 0.15);
+    animation: softPulse 2s ease-in-out infinite;
+  }
+  @keyframes softPulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.7; }
+  }
+
+  /* ===== 蓝色补登提示 ===== */
+  .supplement-warning {
+    margin-top: 10px; display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(0, 122, 255, 0.08);
+    color: #007aff;
+    font-size: 13px; font-weight: 500; padding: 8px 16px;
+    border-radius: 999px; text-align: center; line-height: 1.4; max-width: 100%;
+    border: 1px solid rgba(0, 122, 255, 0.1);
+  }
+
+  /* ===== 教程跳转按钮 ===== */
+  .tutorial-jump-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    margin-top: 14px;
+    font-size: 14px;
+    color: #7c3aed;
+    background: rgba(124, 58, 237, 0.1);
+    padding: 9px 22px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all .2s;
+    border: 1px solid rgba(124, 58, 237, 0.15);
+  }
+  .tutorial-jump-btn:active { background: rgba(124, 58, 237, 0.2); transform: scale(0.98); }
+
+  .countdown-card {
+    display: none; background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.2);
+    border-radius: 16px; padding: 12px 16px; margin-bottom: 12px;
+    color: #ff3b30; font-size: 14px; font-weight: 600;
+    animation: fadeIn .3s ease; text-align: center;
+  }
+
+  /* ===== 订单失效提示条 ===== */
+  .expired-tip-card {
+    padding: 12px 14px; margin-bottom: 10px;
+    background: rgba(255, 59, 48, 0.1);
+    border: 1px solid rgba(255, 59, 48, 0.2);
+    color: #ff3b30; font-size: 13px; font-weight: 600;
+    text-align: center; line-height: 1.5;
+    animation: fadeIn .3s ease;
+  }
+  .expired-tip-card .sub {
+    display: block; margin-top: 4px;
+    font-size: 12px; font-weight: 500; color: #b91c1c; opacity: 0.85;
+  }
+
+  /* ===== 服务器同步提示条 ===== */
+  .saved-tip-card {
+    padding: 10px 14px; margin-bottom: 10px;
+    background: rgba(52, 199, 89, 0.1);
+    border: 1px solid rgba(52, 199, 89, 0.25);
+    color: #1b7f3b; font-size: 12.5px; font-weight: 600;
+    text-align: center; line-height: 1.5;
+    border-radius: 14px;
+    animation: fadeIn .3s ease;
+  }
+
+  .msg-list { display: flex; flex-direction: column; gap: 10px; }
+  .msg {
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 16px; padding: 16px;
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+    animation: fadeIn .3s ease;
+  }
+  .code-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .msg .code {
+    font-size: 32px; font-weight: 800; color: #007aff; letter-spacing: 4px;
+    font-family: ui-monospace, Menlo, Consolas, monospace; line-height: 1;
+  }
+  .btn-copy {
+    background: rgba(0, 122, 255, 0.1); color: #007aff; border: none; padding: 9px 16px;
+    border-radius: 999px; font-size: 13px; cursor: pointer; font-weight: 600;
+    transition: all .15s; min-height: 38px; white-space: nowrap;
+  }
+  .btn-copy:active { background: rgba(0, 122, 255, 0.2); transform: scale(0.98); }
+  .msg .content { font-size: 14px; color: #3a3a3c; line-height: 1.6; word-break: break-all; }
+  .msg .time { font-size: 12px; color: #8e8e93; margin-top: 10px; }
+
+  /* ===== 空状态（等待验证码显示区） ===== */
+  .empty {
+    text-align: center;
+    color: #8e8e93;
+    padding: 34px 20px;
+    font-size: 15px;
+    border-radius: 16px;
+    border: 2px dashed rgba(0, 122, 255, 0.4);
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    animation: fadeIn .3s ease;
+  }
+  .empty-icon { font-size: 42px; line-height: 1; margin-bottom: 12px; }
+  .empty-title {
+    font-size: 16px; font-weight: 800; color: #007aff;
+    margin-bottom: 8px; letter-spacing: 0.5px;
+  }
+  .empty-sub {
+    font-size: 13px; color: #6b7280; line-height: 1.7;
+    max-width: 300px; margin: 0 auto;
+  }
+  .wait-dots { display: flex; justify-content: center; gap: 6px; margin-top: 16px; }
+  .wait-dots span {
+    width: 8px; height: 8px; border-radius: 50%; background: #007aff;
+    opacity: .35; animation: dotBounce 1.2s infinite ease-in-out;
+  }
+  .wait-dots span:nth-child(2) { animation-delay: .15s; }
+  .wait-dots span:nth-child(3) { animation-delay: .3s; }
+  @keyframes dotBounce {
+    0%, 60%, 100% { transform: translateY(0);     opacity: .35; }
+    30%           { transform: translateY(-6px);  opacity: 1;   }
+  }
+  .empty.empty-error, .empty.empty-expired {
+    border-color: rgba(255, 59, 48, 0.35);
+    background: rgba(255, 59, 48, 0.06);
+  }
+  .empty.empty-error .empty-title,
+  .empty.empty-expired .empty-title { color: #ff3b30; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ===== 确认取号弹窗 ===== */
+  .confirm-modal {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: none; align-items: center; justify-content: center;
+    z-index: 10000; padding: 20px;
+  }
+  .confirm-modal.show { display: flex; }
+  .confirm-modal-content {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 20px; padding: 24px 20px;
+    max-width: 380px; width: 100%;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+    text-align: left; animation: fadeIn 0.25s ease;
+  }
+  .confirm-modal-header {
+    display: flex; align-items: center; font-size: 17px; font-weight: 700;
+    color: #1c1c1e; margin-bottom: 12px;
+  }
+  .confirm-modal-header svg { margin-right: 8px; flex-shrink: 0; }
+  .confirm-modal-body p {
+    font-size: 14px; color: #3a3a3c; line-height: 1.8; margin: 0 0 8px 0;
+  }
+  .confirm-modal-btn {
+    width: 100%;
+    background: linear-gradient(135deg, #007aff, #0a84ff);
+    color: #fff; border: none; padding: 14px; border-radius: 999px;
+    font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 12px;
+    box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+    transition: all .2s;
+  }
+  .confirm-modal-btn:active { background: linear-gradient(135deg, #0062cc, #005bb5); transform: scale(0.98); }
+
+  /* ===== 移动端适配 ===== */
+  @media (max-width: 480px) {
+    body { padding: 10px 10px 28px; }
+    .header { padding: 18px 14px 14px; border-radius: 14px; }
+    .phone-region-tip { font-size: 16px; padding: 9px 14px; }
+    .phone { font-size: 24px; letter-spacing: 1.5px; }
+    .btn-copy-phone { font-size: 14px; padding: 10px 26px; min-height: 42px; width: auto; }
+    .error-tip-card { padding: 12px 12px; border-radius: 14px; }
+    .error-tip-title { font-size: 14px; }
+    .error-tip-desc { font-size: 12.5px; }
+    .fetch-warning { font-size: 12.5px; padding: 9px 16px; border-radius: 12px; width: 100%; }
+    .supplement-warning { font-size: 12.5px; padding: 9px 16px; border-radius: 12px; width: 100%; }
+    .msg { padding: 14px; border-radius: 14px; }
+    .msg .code { font-size: 30px; letter-spacing: 3px; }
+    .msg .content { font-size: 13.5px; }
+    .code-row { gap: 8px; }
+    .btn-copy { padding: 8px 14px; font-size: 12.5px; }
+    .empty { padding: 28px 16px; }
+    .empty-icon { font-size: 36px; }
+    .empty-title { font-size: 15px; }
+    .empty-sub { font-size: 12.5px; }
+  }
+  @media (max-width: 340px) {
+    .phone-region-tip { font-size: 14px; padding: 8px 12px; }
+    .phone { font-size: 20px; letter-spacing: 1px; }
+    .msg .code { font-size: 26px; letter-spacing: 2px; }
+  }
+
+  /* ===== 底部教程区域样式 ===== */
+  .tutorial-section {
+    padding: 18px 14px;
+    margin-top: 12px;
+  }
+  .tutorial-header {
+    font-size: 22px;
+    font-weight: 800;
+    text-align: center;
+    color: #007aff;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px dashed rgba(0, 122, 255, 0.3);
+    letter-spacing: 2px;
+  }
+  .tutorial-steps {
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .tutorial-step {
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 14px; overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  }
+  .tutorial-img-wrapper {
+    width: 100%;
+    min-height: 120px;
+    background: rgba(0, 0, 0, 0.02);
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  }
+  .tutorial-img {
+    width: 100%; height: auto; display: block;
+    object-fit: contain;
+  }
+  .img-error-msg {
+    display: none;
+    color: #8e8e93;
+    font-size: 13px;
+    padding: 30px 20px;
+    text-align: center;
+    background: #f8f9fb;
+    width: 100%;
+  }
+  .tutorial-img-wrapper.img-error .img-error-msg {
+    display: block;
+  }
+  .tutorial-desc {
+    padding: 12px 14px;
+    font-size: 14px; color: #3a3a3c;
+    line-height: 1.6; background: rgba(255, 255, 255, 0.9);
+  }
+  .tutorial-desc strong {
+    color: #1c1c1e;
+    font-weight: 700;
+    margin-bottom: 4px;
+    display: inline-block;
+    font-size: 15px;
+  }
+  @media (max-width: 480px) {
+    .tutorial-section { padding: 14px 12px; }
+    .tutorial-header { font-size: 20px; }
+    .tutorial-desc { font-size: 13px; padding: 10px 12px; }
+    .tutorial-desc strong { font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1. 报错提示 -->
+<div class="error-tip-card glass-card">
+  <div class="error-tip-title">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+     遇到报错？看这里
+  </div>
+  <div class="error-tip-desc">
+    如果出现 <span class="highlight-red">订单失效</span> 或 <span class="highlight-red">未知号码</span>请检查链接有没有少复制或者多复制了，或者更换浏览器即可。
+  </div>
+</div>
+
+<!-- 2. 手机号卡片 -->
+<div class="header glass-card">
+  <div class="status loading" id="status">连接中</div>
+
+  <div class="phone-label">【中国香港手机号】</div>
+
+  <!-- 区号提示（加大加粗） -->
+  <div class="phone-region-tip">港卡需要把 +86 的区号修改为 +852 再输入下面8位数的港卡号码获取验证码</div>
+
+  <div class="phone" id="phone">加载中...</div>
+
+  <button class="btn-copy-phone" id="btn-copy-phone" onclick="copyPhone(this)">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+    </svg>
+    <span id="copy-phone-text">复制手机号</span>
+  </button>
+
+  <!-- 红色警告 -->
+  <div class="fetch-warning">
+    <span>耐心等待60秒，没收到验证再获取</span>
+  </div>
+
+  <!-- 蓝色补登提示 -->
+  <div class="supplement-warning">
+    <span>如果需要补登可联系在线客服询问是否可补登，补登一次0.5元，如无法补登也没办法</span>
+  </div>
+
+  <!-- 跳转教程按钮 -->
+  <a href="#tutorial-section" class="tutorial-jump-btn">
+    📖 点击查看底部兑换教程
+  </a>
+</div>
+
+<!-- 3. 倒计时 -->
+<div class="countdown-card" id="countdown-card">
+  ⏱ 验证码已获取，本订单将在 <span id="countdown-timer" style="font-weight:bold; font-size:15px;">05:00</span> 后自动销毁失效。
+</div>
+
+<!-- 4. 消息列表（接收验证码区域，空状态框会在这里长期显示直到有短信） -->
+<div class="msg-list" id="list">
+  <div class="empty" id="empty-state">
+    <div class="empty-icon">📩</div>
+    <div class="empty-title">验证码将显示在这个位置</div>
+    <div class="empty-sub">短信到达后会自动出现在这里，点击「复制验证码」即可直接使用</div>
+    <div class="wait-dots"><span></span><span></span><span></span></div>
+  </div>
+</div>
+
+<!-- 5. 底部兑换教程（四步重新设计） -->
+<div class="tutorial-section glass-card" id="tutorial-section">
+  <div class="tutorial-header">📖 兑换操作教程</div>
+  <div class="tutorial-steps">
+
+    <!-- 教程步骤 1：新图 -->
+    <div class="tutorial-step">
+      <div class="tutorial-img-wrapper">
+        <img src="https://pic1.imgdb.cn/i/034X4yzaUzsQslTBrFiMZc.png" alt="步骤一" class="tutorial-img" onerror="this.style.display='none'; this.parentNode.classList.add('img-error');">
+        <div class="img-error-msg">图片加载失败，请根据下方文字教程操作</div>
+      </div>
+      <div class="tutorial-desc">
+        <strong>步骤一：打开迅游加速器客户端</strong><br>
+        在电脑上打开已安装好的迅游加速器客户端，并登录你的账号。网吧和电竞酒店请务必去官方下载带【口令】入口的客户端。
+      </div>
+    </div>
+
+    <!-- 教程步骤 2：原步骤一图片 -->
+    <div class="tutorial-step">
+      <div class="tutorial-img-wrapper">
+        <img src="https://pic1.imgdb.cn/i/034VZSJ2mWz9uwsWhknsN4.png" alt="步骤二" class="tutorial-img" onerror="this.style.display='none'; this.parentNode.classList.add('img-error');">
+        <div class="img-error-msg">图片加载失败，请根据下方文字教程操作</div>
+      </div>
+      <div class="tutorial-desc">
+        <strong>步骤二：点击右上角【口令】按钮</strong><br>
+        进入客户端主界面后，在右上角找到并点击【口令】按钮，进入口令兑换页面。
+      </div>
+    </div>
+
+    <!-- 教程步骤 3：原步骤二图片 -->
+    <div class="tutorial-step">
+      <div class="tutorial-img-wrapper">
+        <img src="https://pic1.imgdb.cn/i/034VZSKehbCPmddRi9MgtY.png" alt="步骤三" class="tutorial-img" onerror="this.style.display='none'; this.parentNode.classList.add('img-error');">
+        <div class="img-error-msg">图片加载失败，请根据下方文字教程操作</div>
+      </div>
+      <div class="tutorial-desc">
+        <strong>步骤三：输入兑换口令并点击兑换</strong><br>
+        在兑换框内粘贴或输入你获得的兑换口令，确认无误后点击【立即兑换】按钮。
+      </div>
+    </div>
+
+    <!-- 教程步骤 4：原步骤三图片 -->
+    <div class="tutorial-step">
+      <div class="tutorial-img-wrapper">
+        <img src="https://pic1.imgdb.cn/i/034VZSBuE62guvxLkekwrE.png" alt="步骤四" class="tutorial-img" onerror="this.style.display='none'; this.parentNode.classList.add('img-error');">
+        <div class="img-error-msg">图片加载失败，请根据下方文字教程操作</div>
+      </div>
+      <div class="tutorial-desc">
+        <strong>步骤四：查看兑换记录确认成功</strong><br>
+        点击右上角【查看兑换记录】，在列表中找到“无限制3天SVIP”，确认状态显示为【已使用】，即代表兑换成功。
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 6. 确认取号弹窗 -->
+<div id="confirmModal" class="confirm-modal">
+  <div class="confirm-modal-content">
+    <div class="confirm-modal-header">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="16" x2="12" y2="12"></line>
+        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+      </svg>
+      【使用须知】电脑迅游专用
+    </div>
+    <div class="confirm-modal-body">
+      <p>本账号只可以电脑迅游使用</p>
+      <p>网吧和电竞酒店必须去官方下载带口令入口的客户端</p>
+      <p>账号只能登录一次 后续补登一次0.5 联系在线客服</p>
+    </div>
+    <button class="confirm-modal-btn" onclick="confirmRead()">已阅读以上须知，确认取号</button>
+  </div>
+</div>
+
+<script>
+// ==================== 兼容性 Polyfill ====================
+if (typeof window.URLSearchParams === 'undefined') {
+    window.URLSearchParams = function(searchString) {
+        this._searchParams = {};
+        var search = searchString || window.location.search;
+        if (search.charAt(0) === '?') {
+            search = search.substring(1);
+        }
+        if (search) {
+            search.split('&').forEach(function(pair) {
+                var parts = pair.split('=');
+                var key = decodeURIComponent(parts[0]);
+                var value = parts.length > 1 ? decodeURIComponent(parts[1]) : '';
+                this._searchParams[key] = value;
+            }.bind(this));
+        }
+        this.get = function(name) {
+            return this._searchParams.hasOwnProperty(name) ? this._searchParams[name] : null;
+        };
+        this.has = function(name) {
+            return this._searchParams.hasOwnProperty(name);
+        };
+    };
+}
+
+if (!String.prototype.padStart) {
+    String.prototype.padStart = function(targetLength, padString) {
+        targetLength = targetLength >> 0;
+        padString = String(padString || ' ');
+        if (this.length >= targetLength) return String(this);
+        targetLength = targetLength - this.length;
+        while (padString.length < targetLength) padString += padString;
+        return padString.slice(0, targetLength) + String(this);
+    };
+}
+
+if (!Number.isFinite) {
+    Number.isFinite = function(value) {
+        return typeof value === 'number' && isFinite(value);
+    };
+}
+
+// ==================== 接口地址 ====================
+var REPORT_API = 'https://www.oo55426.xyz/api/report';
+var ORDER_API  = 'https://www.oo55426.xyz/api/order';
+var PROXY_API  = 'https://www.oo55426.xyz/api/proxy?target=';
+
+// ==================== DOM ====================
+var listEl   = document.getElementById('list');
+var statusEl = document.getElementById('status');
+var phoneEl  = document.getElementById('phone');
+var countdownCard = document.getElementById('countdown-card');
+var countdownTimer = document.getElementById('countdown-timer');
+var copyPhoneText = document.getElementById('copy-phone-text');
+
+// ==================== 空状态模板（等待短信，长期显示，收到消息后消失） ====================
+var EMPTY_HTML =
+  '<div class="empty" id="empty-state">' +
+    '<div class="empty-icon">📩</div>' +
+    '<div class="empty-title">验证码将显示在这个位置</div>' +
+    '<div class="empty-sub">短信到达后会自动出现在这里，点击「复制验证码」即可直接使用</div>' +
+    '<div class="wait-dots"><span></span><span></span><span></span></div>' +
+  '</div>';
+
+// ==================== 全局状态 ====================
+var currentPhone = '';
+var apiUrl = '';
+var lastRaw = '';
+var seenKeys = new Set();
+var serverRecordCodes = new Set();
+var timer = null;
+var currentOid = '';
+
+var countdownStarted = false;
+var orderExpired = false;
+
+var expireAt = 0;
+var countdownInterval = null;
+var COUNTDOWN_SECONDS = 300;
+
+var pendingOrderData = null;
+var hasScrolledToFirstCode = false;
+
+// ============ 0. 本地持久化（仅缓存失效时间） ============
+var STORE_PREFIX = 'hk_sms_expire_';
+
+function storageKey() {
+  var raw = currentOid || apiUrl || 'default';
+  var h = 0;
+  for (var i = 0; i < raw.length; i++) h = (h * 31 + raw.charCodeAt(i)) | 0;
+  return STORE_PREFIX + h;
+}
+
+function getStoredExpire() {
+  try {
+    var n = parseInt(localStorage.getItem(storageKey()) || '0', 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch (e) { return 0; }
+}
+
+function setStoredExpire(ts) {
+  try { localStorage.setItem(storageKey(), String(ts)); } catch (e) {}
+}
+
+// ============ 1. 验证码提取算法 ============
+function extractCode(text) {
+  if (!text) return null;
+  var keywordMatch = text.match(/(?:验证码|校验码|动态码|code)[^\d]{0,8}(\b[0-9a-zA-Z]{4,8}\b)/i);
+  if (keywordMatch) return keywordMatch[1];
+
+  var bracketMatch = text.match(/[【\[](\d{4,8})[】\]]/);
+  if (bracketMatch) return bracketMatch[1];
+
+  var generalMatch = text.match(/\b(?!(?:19|20)\d{2}\b)\d{4,8}\b/);
+  return generalMatch ? generalMatch[0] : null;
+}
+
+function isPendingMessage(str) {
+  if (!str || typeof str !== 'string') return true;
+  return /暂未收到|等待短信|暂无短信|未接收|no verification code|no sms|wait|pending/i.test(str.trim());
+}
+
+// ============ 2. 多平台兼容解析 ============
+function parseMessages(raw) {
+  try {
+    var obj = JSON.parse(raw);
+    if (!obj.data) return [];
+
+    if (Object.prototype.toString.call(obj.data) === '[object Array]') {
+      return obj.data.map(function(item) {
+        if (typeof item === 'string') {
+          return { code: extractCode(item), content: item };
+        }
+        var content = item.content || item.message || item.sms || item.text || JSON.stringify(item);
+        return {
+          code: item.code || extractCode(content),
+          content: content,
+          time: item.time || item.date || item.timestamp || ''
+        };
+      });
+    }
+
+    if (typeof obj.data === 'object') {
+      var rawCode = obj.data.code ? String(obj.data.code).trim() : '';
+      var rawMsg = obj.msg || '';
+
+      if (!rawCode && isPendingMessage(rawMsg)) return [];
+
+      var content = obj.data.sms || obj.data.content || obj.data.message || obj.data.text;
+      if (!content) {
+        content = rawCode ? '【短信验证码】您的验证码为 ' + rawCode : JSON.stringify(obj.data);
+      }
+
+      var finalCode = rawCode || extractCode(content);
+      if (!finalCode && isPendingMessage(content)) return [];
+
+      var time = obj.data.code_time || obj.data.time || obj.data.date || '';
+      return [{ code: finalCode, content: content, time: time }];
+    }
+
+    if (typeof obj.data === 'string') {
+      if (isPendingMessage(obj.data)) return [];
+      return [{ code: extractCode(obj.data), content: obj.data }];
+    }
+
+    if (obj.message && !isPendingMessage(obj.message)) {
+      return [{ code: extractCode(obj.message), content: obj.message }];
+    }
+
+    return [];
+  } catch (e) {
+    var str = raw.trim();
+    if (str && !isPendingMessage(str)) {
+      return [{ code: extractCode(str), content: str }];
+    }
+    return [];
+  }
+}
+
+// ============ 3. 复制工具 ============
+function copyPhone(btn) {
+  if (!currentPhone) return;
+  var purePhone = currentPhone.replace(/^\+?852/, '');
+
+  var doCopy = function(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function() {
+        showCopied(btn);
+      }).catch(function() { fallbackCopyPhone(text, btn); });
+    } else {
+      fallbackCopyPhone(text, btn);
+    }
+  };
+
+  doCopy(purePhone);
+}
+
+function showCopied(btn) {
+  var old = copyPhoneText ? copyPhoneText.textContent : '';
+  btn.classList.add('copied');
+  if (copyPhoneText) copyPhoneText.textContent = '已复制 ✓';
+  setTimeout(function() {
+    btn.classList.remove('copied');
+    if (copyPhoneText) copyPhoneText.textContent = old || '复制手机号';
+  }, 1500);
+}
+
+function fallbackCopyPhone(text, btn) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+    showCopied(btn);
+  } catch (e) { alert('复制失败，请手动复制：' + text); }
+  document.body.removeChild(ta);
+}
+
+function markCopied(btn) {
+  if (!btn) return;
+  var originalText = btn.textContent;
+  btn.textContent = '已复制 ✓';
+  clearTimeout(btn._copyTimer);
+  btn._copyTimer = setTimeout(function() { btn.textContent = originalText; }, 1500);
+}
+
+function copyCode(code, btn) {
+  if (!code) return;
+  var doCopy = function(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function() {
+        markCopied(btn);
+      }).catch(function() { fallbackCopyCode(text, btn); });
+    } else {
+      fallbackCopyCode(text, btn);
+    }
+  };
+  doCopy(code);
+}
+
+function fallbackCopyCode(code, btn) {
+  var ta = document.createElement('textarea');
+  ta.value = code;
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+  markCopied(btn);
+}
+
+// ============================================================================
+// ★★★ 后端记录同步（永久保存 + 跨设备可见）★★★
+// ============================================================================
+
+function normalizePhone(p) {
+  return String(p || '').replace(/[^\d]/g, '').replace(/^852/, '');
+}
+
+function getRecordTs(item) {
+  var candidates = [item.ts, item.timestamp, item.createTime, item.createdAt];
+  for (var i = 0; i < candidates.length; i++) {
+    var n = Number(candidates[i]);
+    if (Number.isFinite(n) && n > 0) return n > 1e12 ? n : n * 1000;
+  }
+  var t = Date.parse(item.time);
+  return isNaN(t) ? 0 : t;
+}
+
+function isMyRecord(item) {
+  if (!item || typeof item !== 'object') return false;
+  if (item.type === 'claim') return false;
+
+  if (currentOid) {
+    var oidFields = ['oid', 'orderId', 'order_id'];
+    for (var i = 0; i < oidFields.length; i++) {
+      var v = item[oidFields[i]];
+      if (v && String(v).trim() === currentOid) return true;
+    }
+  }
+
+  if (currentPhone) {
+    var p = item.phone;
+    if (p && normalizePhone(p) === normalizePhone(currentPhone)) return true;
+  }
+  return false;
+}
+
+function showServerSyncTip(count) {
+  if (!count) return;
+  var tip = document.getElementById('saved-tip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'saved-tip';
+    tip.className = 'saved-tip-card';
+    if (listEl.parentNode) listEl.parentNode.insertBefore(tip, listEl);
+  }
+  tip.textContent = '☁️ 已从服务器同步 ' + count + ' 条历史记录，永久保存不会丢失';
+}
+
+function loadServerHistory(callback) {
+  xhrGet(REPORT_API, function(err, text) {
+    if (err) {
+      console.warn('拉取后端历史记录失败:', err);
+      if (callback) callback(false);
+      return;
+    }
+
+    var list = null;
+    try { list = JSON.parse(text); } catch (e) {}
+    if (!Array.isArray(list)) {
+      if (callback) callback(false);
+      return;
+    }
+
+    var mine = list.filter(isMyRecord);
+    if (!mine.length) {
+      if (callback) callback(false);
+      return;
+    }
+
+    mine.sort(function(a, b) { return getRecordTs(b) - getRecordTs(a); });
+
+    var empty = listEl.querySelector('.empty');
+    if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+
+    var added = 0;
+    mine.forEach(function(item) {
+      var rec = {
+        code: String(item.code || ''),
+        content: String(item.content || ''),
+        time: String(item.time || ''),
+        ts: getRecordTs(item)
+      };
+      if (!rec.code && !rec.content) return;
+
+      var key = rec.code + '|' + rec.content;
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+
+      if (rec.code) serverRecordCodes.add(rec.code);
+
+      listEl.appendChild(buildMsgEl(rec));
+      added++;
+    });
+
+    showServerSyncTip(mine.length);
+    if (callback) callback(added > 0);
+  });
+}
+
+// ============ 4. 倒计时 ============
+function showExpiredState() {
+  orderExpired = true;
+  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+  if (timer) { clearInterval(timer); timer = null; }
+
+  countdownCard.style.display = 'none';
+
+  statusEl.className = 'status error';
+  statusEl.textContent = '订单已失效';
+
+  if (!document.getElementById('expired-tip')) {
+    var tip = document.createElement('div');
+    tip.id = 'expired-tip';
+    tip.className = 'expired-tip-card glass-card';
+    tip.innerHTML =
+      '⏱ 本订单已失效，无法再接收新短信' +
+      '<span class="sub">以下为历史验证码记录，已永久保存在服务器，仍可查看与复制。</span>';
+    if (listEl.parentNode) {
+      listEl.parentNode.insertBefore(tip, listEl);
+    }
+  }
+
+  if (!listEl.querySelector('.msg')) {
+    listEl.innerHTML =
+      '<div class="empty empty-expired">' +
+        '<div class="empty-icon">⏱</div>' +
+        '<div class="empty-title">验证码使用时限已到</div>' +
+        '<div class="empty-sub">本链接已安全销毁，如有需要请重新获取订单。</div>' +
+      '</div>';
+  }
+}
+
+function tickCountdown() {
+  var remaining = Math.max(0, Math.ceil((expireAt - Date.now()) / 1000));
+  if (remaining <= 0) {
+    if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+    showExpiredState();
+    return;
+  }
+  var m = String(Math.floor(remaining / 60)).padStart(2, '0');
+  var s = String(remaining % 60).padStart(2, '0');
+  countdownTimer.textContent = m + ':' + s;
+  statusEl.textContent = m + ':' + s + ' 后失效';
+  statusEl.className = 'status expiring';
+}
+
+function beginCountdown(ts) {
+  if (countdownInterval) clearInterval(countdownInterval);
+  expireAt = ts;
+  countdownStarted = true;
+  countdownCard.style.display = 'block';
+  statusEl.className = 'status expiring';
+  countdownInterval = setInterval(tickCountdown, 500);
+  tickCountdown();
+}
+
+function startExpireCountdown(serverExpireAt) {
+  if (countdownStarted) return;
+  if (orderExpired) return;
+
+  var ts = serverExpireAt || 0;
+  if (!ts) ts = getStoredExpire();
+
+  if (ts && ts > Date.now()) {
+    setStoredExpire(ts);
+    beginCountdown(ts);
+    return;
+  }
+
+  ts = Date.now() + COUNTDOWN_SECONDS * 1000;
+  setStoredExpire(ts);
+  beginCountdown(ts);
+
+  if (currentOid) {
+    xhrPost(ORDER_API, {
+      action: 'complete',
+      oid: currentOid
+    }, function(err, res) {
+      if (err || !res) return;
+      try {
+        var d = JSON.parse(res);
+        if (d.expireAt && d.expireAt > Date.now()) {
+          setStoredExpire(d.expireAt);
+          expireAt = d.expireAt;
+          tickCountdown();
+        }
+      } catch (e) {}
+    });
+  }
+}
+
+// ============ 5. 渲染 ============
+function buildMsgEl(record) {
+  var div = document.createElement('div');
+  div.className = 'msg';
+
+  var html = '';
+  if (record.code) {
+    html += '<div class="code-row">' +
+      '<span class="code">' + escapeHtml(record.code) + '</span>' +
+      '<button class="btn-copy" data-copy-code="' + escapeHtml(record.code) + '">复制验证码</button>' +
+      '</div>';
+  }
+  html += '<div class="content">' + escapeHtml(record.content || '') + '</div>';
+  html += '<div class="time">' +
+    escapeHtml(String(record.time || new Date().toLocaleTimeString())) +
+    '</div>';
+  div.innerHTML = html;
+  return div;
+}
+
+function render(messages) {
+  if (orderExpired) return;
+
+  if (!messages.length) {
+    if (!listEl.querySelector('.msg') && !listEl.querySelector('.empty')) {
+      listEl.innerHTML = EMPTY_HTML;
+    }
+    return;
+  }
+
+  // 收到验证码，自动移除空状态框
+  var empty = listEl.querySelector('.empty');
+  if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+
+  var foundCode = false;
+
+  messages.forEach(function(msg) {
+    var key = (msg.code || '') + '|' + (msg.content || '');
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
+
+    var record = {
+      code: msg.code || '',
+      content: msg.content || '',
+      time: msg.time || new Date().toLocaleString('zh-CN', { hour12: false }),
+      ts: Date.now()
+    };
+
+    if (record.code) {
+      foundCode = true;
+
+      if (!serverRecordCodes.has(record.code)) {
+        serverRecordCodes.add(record.code);
+        xhrPost(REPORT_API, {
+          phone: currentPhone,
+          code: record.code,
+          content: record.content,
+          time: record.time,
+          ts: record.ts,
+          oid: currentOid
+        }, function(){});
+      }
+    }
+
+    listEl.insertBefore(buildMsgEl(record), listEl.firstChild);
+
+    var tip = document.getElementById('saved-tip');
+    if (tip) {
+      var current = listEl.querySelectorAll('.msg').length;
+      tip.textContent = '☁️ 共 ' + current + ' 条记录，已永久保存在服务器';
+    }
+  });
+
+  if (foundCode) {
+    startExpireCountdown();
+
+    if (!hasScrolledToFirstCode) {
+      hasScrolledToFirstCode = true;
+      try {
+        var rect = listEl.getBoundingClientRect();
+        var notVisible = rect.top > window.innerHeight - 120 || rect.bottom < 80;
+        if (notVisible) {
+          if (listEl.scrollIntoView) {
+            try { listEl.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+            catch (e) { listEl.scrollIntoView(); }
+          }
+        }
+      } catch (e) {}
+    }
+  }
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return {
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c];
+  });
+}
+
+listEl.addEventListener('click', function(e) {
+  var el = e.target;
+  while (el && el !== listEl) {
+    if (el.className && String(el.className).indexOf('btn-copy') !== -1) {
+      var code = el.getAttribute('data-copy-code');
+      if (code) copyCode(code, el);
+      return;
+    }
+    el = el.parentNode;
+  }
+});
+
+// ============ XHR 辅助函数 ============
+function xhrGet(url, callback) {
+  var xhr = new XMLHttpRequest();
+  var finished = false;
+  function finish(err, text) {
+    if (finished) return;
+    finished = true;
+    callback(err, text);
+  }
+
+  xhr.open('GET', url, true);
+  xhr.timeout = 10000;
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4) {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        finish(null, xhr.responseText);
+      } else {
+        var err = new Error('请求失败: ' + xhr.status);
+        try {
+          var json = JSON.parse(xhr.responseText);
+          if (json.error) err.message = json.error;
+        } catch (e) {}
+        finish(err);
+      }
+    }
+  };
+  xhr.ontimeout = function() { finish(new Error('请求超时')); };
+  xhr.onerror   = function() { finish(new Error('网络错误')); };
+  xhr.send();
+}
+
+function xhrPost(url, data, callback) {
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', url, true);
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  xhr.timeout = 10000;
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4) {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        callback(null, xhr.responseText);
+      } else {
+        callback(new Error('请求失败: ' + xhr.status));
+      }
+    }
+  };
+  xhr.ontimeout = function() { callback(new Error('请求超时')); };
+  xhr.onerror   = function() { callback(new Error('网络错误')); };
+  xhr.send(JSON.stringify(data));
+}
+
+// ============ 6. 轮询 ============
+function poll() {
+  if (!apiUrl) return;
+  if (orderExpired) return;
+
+  var proxyUrl = PROXY_API + encodeURIComponent(apiUrl);
+  xhrGet(proxyUrl, function(err, text) {
+    if (err) {
+      console.warn('轮询拉取重试中:', err);
+      if (!orderExpired && !countdownStarted) {
+        statusEl.textContent = '连接失败，重试中';
+        statusEl.className = 'status error';
+      }
+      return;
+    }
+
+    if (!orderExpired && !countdownStarted) {
+      statusEl.textContent = '已连接';
+      statusEl.className = 'status';
+    }
+
+    if (text !== lastRaw) {
+      lastRaw = text;
+      render(parseMessages(text));
+    }
+  });
+}
+
+// ============ 7. 确认弹窗逻辑 ============
+function showConfirmModal() {
+  var modal = document.getElementById('confirmModal');
+  if (modal) modal.classList.add('show');
+}
+
+function confirmRead() {
+  var modal = document.getElementById('confirmModal');
+  if (modal) modal.classList.remove('show');
+
+  if (!pendingOrderData) return;
+
+  if (currentOid) {
+    try {
+      localStorage.setItem('hk_sms_confirmed_' + currentOid, 'true');
+    } catch(e) {}
+  }
+
+  if (currentOid) {
+    xhrPost(ORDER_API, {
+      action: 'claim',
+      oid: currentOid
+    }, function(err, res) {
+      if (!err && res) {
+        try {
+          var d = JSON.parse(res);
+          var finalPhone = d.phone || pendingOrderData.phone;
+          var finalApiUrl = d.targetUrl || pendingOrderData.apiUrl;
+          var finalExpireAt = d.expireAt || pendingOrderData.expireAt || 0;
+          afterOrderLoaded(finalPhone, finalApiUrl, finalExpireAt);
+        } catch (e) {
+          afterOrderLoaded(pendingOrderData.phone, pendingOrderData.apiUrl, pendingOrderData.expireAt);
+        }
+      } else {
+        afterOrderLoaded(pendingOrderData.phone, pendingOrderData.apiUrl, pendingOrderData.expireAt);
+      }
+      pendingOrderData = null;
+    });
+  } else {
+    afterOrderLoaded(pendingOrderData.phone, pendingOrderData.apiUrl, pendingOrderData.expireAt);
+    pendingOrderData = null;
+  }
+}
+
+// ============ 8. 初始化 ============
+function init() {
+  var params = new URLSearchParams(location.search);
+  currentOid = params.get('oid') || '';
+  var phone = params.get('phone') || '';
+  apiUrl = params.get('url') || '';
+
+  if (currentOid) {
+    statusEl.textContent = '获取订单中...';
+    xhrGet(ORDER_API + '?oid=' + encodeURIComponent(currentOid), function(err, res) {
+      if (err) {
+        statusEl.textContent = '订单失效';
+        statusEl.className = 'status error';
+        if (!currentPhone) phoneEl.textContent = '订单已失效';
+        loadServerHistory(function(hasAny) {
+          if (!hasAny) {
+            listEl.innerHTML =
+              '<div class="empty empty-error">' +
+                '<div class="empty-icon">⚠️</div>' +
+                '<div class="empty-title">订单已失效</div>' +
+                '<div class="empty-sub">' + escapeHtml(err.message || '订单已失效或不存在') + '</div>' +
+              '</div>';
+          }
+        });
+        return;
+      }
+
+      try {
+        var data = JSON.parse(res);
+        if (data.phone) phone = data.phone;
+        if (data.targetUrl) apiUrl = data.targetUrl;
+        var serverExpireAt = data.expireAt || 0;
+        var firstClaimAt = data.firstClaimAt || 0;
+
+        currentPhone = phone || '';
+        if (currentPhone) {
+          phoneEl.textContent = currentPhone.replace(/^\+?852/, '');
+        }
+
+        if (serverExpireAt && serverExpireAt <= Date.now()) {
+          loadServerHistory(function() {
+            showExpiredState();
+          });
+          return;
+        }
+
+        var confirmed = false;
+        if (firstClaimAt > 0) {
+          confirmed = true;
+          try { localStorage.setItem('hk_sms_confirmed_' + currentOid, 'true'); } catch(e) {}
+        } else {
+          try {
+            confirmed = localStorage.getItem('hk_sms_confirmed_' + currentOid) === 'true';
+          } catch(e) {}
+        }
+
+        if (confirmed) {
+          afterOrderLoaded(phone, apiUrl, serverExpireAt);
+        } else {
+          pendingOrderData = { phone: phone, apiUrl: apiUrl, expireAt: serverExpireAt };
+          showConfirmModal();
+        }
+      } catch (e) {
+        statusEl.textContent = '订单失效';
+        statusEl.className = 'status error';
+        if (!currentPhone) phoneEl.textContent = '订单已失效';
+        loadServerHistory(function(hasAny) {
+          if (!hasAny) {
+            listEl.innerHTML =
+              '<div class="empty empty-error">' +
+                '<div class="empty-icon">⚠️</div>' +
+                '<div class="empty-title">订单数据异常</div>' +
+                '<div class="empty-sub">订单数据解析失败，请重新获取链接。</div>' +
+              '</div>';
+          }
+        });
+        return;
+      }
+    });
+  } else {
+    currentPhone = phone || '';
+    if (currentPhone) phoneEl.textContent = currentPhone.replace(/^\+?852/, '');
+    pendingOrderData = { phone: phone, apiUrl: apiUrl, expireAt: 0 };
+    showConfirmModal();
+  }
+}
+
+function afterOrderLoaded(phone, apiUrl, serverExpireAt) {
+  if (phone) {
+    currentPhone = phone;
+    phoneEl.textContent = phone.replace(/^\+?852/, '');
+  }
+
+  if (!apiUrl) {
+    statusEl.textContent = '缺少链接';
+    statusEl.className = 'status error';
+    if (!listEl.querySelector('.msg')) {
+      listEl.innerHTML =
+        '<div class="empty empty-error">' +
+          '<div class="empty-icon">⚠️</div>' +
+          '<div class="empty-title">缺少接码链接</div>' +
+          '<div class="empty-sub">缺少必要的接码链接参数，请检查链接是否复制完整。</div>' +
+        '</div>';
+    }
+    return;
+  }
+
+  var effectiveExpire = serverExpireAt || getStoredExpire();
+
+  loadServerHistory(function() {
+    if (effectiveExpire && effectiveExpire <= Date.now()) {
+      showExpiredState();
+      return;
+    }
+
+    if (effectiveExpire) {
+      setStoredExpire(effectiveExpire);
+      beginCountdown(effectiveExpire);
+    }
+
+    poll();
+    timer = setInterval(poll, 3000);
+  });
+}
+
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) {
+    clearInterval(timer);
+    timer = null;
+  } else if (!timer && apiUrl && !orderExpired) {
+    poll();
+    timer = setInterval(poll, 3000);
+  }
+});
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#f5f6fa">
+<title>验证码接收</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f6fa; color: #222;
+    padding: 14px 12px 30px; min-height: 100vh;
+    -webkit-font-smoothing: antialiased; font-size: 15px; line-height: 1.5;
+  }
+  body.gate-open { overflow: hidden; }
+
+  .notice-card {
+    background: #fff9e6; border: 1px solid #ffe58f; border-radius: 14px;
+    padding: 14px 14px; margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(250, 173, 20, 0.08);
+  }
+  .notice-title {
+    display: flex; align-items: center; font-size: 15px; font-weight: 700;
+    color: #d46b08; margin-bottom: 6px;
+  }
+  .notice-title svg { margin-right: 6px; flex-shrink: 0; }
+  .notice-desc { font-size: 13px; color: #873800; line-height: 1.6; }
+  .notice-desc .highlight {
+    background: #ff4d4f; color: #fff; padding: 1px 6px; border-radius: 4px;
+    font-weight: 700; display: inline-block; margin: 0 2px;
+  }
+
+  .header {
+    background: #fff; border-radius: 14px; padding: 20px 16px 16px;
+    margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    display: flex; flex-direction: column; align-items: center;
+    position: relative;
+  }
+  .status {
+    position: absolute; right: 12px; top: 12px;
+    font-size: 12px; padding: 3px 9px; border-radius: 20px;
+    background: #e8f5e9; color: #2e7d32; white-space: nowrap; font-weight: 500;
+  }
+  .status.loading { background: #fff8e1; color: #f57c00; }
+  .status.error   { background: #ffebee; color: #c62828; }
+  .status.expired { background: #ffebee; color: #c62828; }
+
+  .acct-label {
+    font-size: 12px; color: #999; letter-spacing: 1px;
+    margin-bottom: 8px; margin-top: 6px;
+  }
+  .acct-line {
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px; width: 100%;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-weight: 700; line-height: 1.3; text-align: center;
+    word-break: break-all; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .acct-line .acct-phone { color: #1a1a1a; font-size: 24px; letter-spacing: 1px; }
+  .acct-line .acct-sep { color: #bbb; font-size: 20px; margin: 0 2px; }
+  .acct-line .acct-pwd { color: #0f9d58; font-size: 24px; letter-spacing: 1.5px; }
+
+  .btn-copy-acct {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 6px; font-size: 14px; color: #1a73e8; background: #e8f0fe;
+    border: none; padding: 9px 22px; border-radius: 999px;
+    cursor: pointer; font-weight: 600; white-space: nowrap;
+    transition: background .15s; user-select: none; min-height: 40px;
+  }
+  .btn-copy-acct:active { background: #d2e3fc; }
+  .btn-copy-acct.copied { background: #e6f4ea; color: #0f9d58; }
+
+  .login-success-tip {
+    margin-top: 12px; padding: 10px 14px;
+    background: #e6f4ea; border: 1px dashed #7bc99a;
+    border-radius: 10px; color: #0f9d58;
+    font-size: 13px; font-weight: 600; line-height: 1.6;
+    text-align: center; width: 100%;
+  }
+  .login-success-tip .emoji { margin-right: 4px; }
+
+  .login-guide {
+    width: 100%; margin-top: 16px; padding: 12px; background: #f8f9fa;
+    border-radius: 10px; font-size: 13px; color: #555; line-height: 1.6;
+    text-align: left; border-left: 4px solid #11998e;
+  }
+  .login-guide strong { color: #11998e; }
+
+  .fetch-warning {
+    margin-top: 16px; display: inline-flex; align-items: center;
+    justify-content: center; gap: 6px;
+    background: linear-gradient(135deg, #ff7875 0%, #ff4d4f 100%);
+    color: #fff; font-size: 13px; font-weight: 700;
+    padding: 9px 16px; border-radius: 999px;
+    box-shadow: 0 3px 10px rgba(255, 77, 79, 0.35);
+    animation: pulseWarn 1.6s ease-in-out infinite;
+    text-align: center; line-height: 1.4; max-width: 100%;
+  }
+  .fetch-warning svg { flex-shrink: 0; }
+  @keyframes pulseWarn {
+    0%, 100% { transform: scale(1);    box-shadow: 0 3px 10px rgba(255, 77, 79, 0.35); }
+    50%      { transform: scale(1.03); box-shadow: 0 5px 16px rgba(255, 77, 79, 0.55); }
+  }
+
+  /* ==== 24 小时有效期横幅 ==== */
+  .expire-bar {
+    display: none;
+    align-items: center; justify-content: center; gap: 8px;
+    background: linear-gradient(135deg, #e8f0fe 0%, #e6f4ea 100%);
+    border: 1px solid #c6dafc; border-radius: 12px;
+    padding: 10px 14px; margin-bottom: 12px;
+    font-size: 13px; color: #1a4fbf; font-weight: 600;
+    flex-wrap: wrap; text-align: center;
+  }
+  .expire-bar .expire-time {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 16px; font-weight: 800; color: #0f9d58; letter-spacing: .5px;
+  }
+  .expire-bar.urgent {
+    background: #fff1f0; border-color: #ffa39e; color: #cf1322;
+  }
+  .expire-bar.urgent .expire-time { color: #cf1322; }
+
+  .msg-list { display: flex; flex-direction: column; gap: 10px; }
+  .msg {
+    background: #fff; border-radius: 14px; padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06); animation: fadeIn .3s ease;
+  }
+  .code-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .msg .code {
+    font-size: 32px; font-weight: 800; color: #1a73e8; letter-spacing: 4px;
+    font-family: ui-monospace, Menlo, Consolas, monospace; line-height: 1;
+  }
+  .btn-copy {
+    background: #e8f0fe; color: #1a73e8; border: none;
+    padding: 9px 16px; border-radius: 999px; font-size: 13px;
+    cursor: pointer; font-weight: 600; transition: all .15s;
+    min-height: 38px; white-space: nowrap;
+  }
+  .btn-copy:active { background: #d2e3fc; }
+  .msg .content { font-size: 14px; color: #555; line-height: 1.6; word-break: break-all; }
+  .msg .time { font-size: 12px; color: #aaa; margin-top: 10px; }
+
+  .empty { text-align: center; color: #999; padding: 70px 20px; font-size: 15px; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .gate {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(15, 23, 42, .58);
+    -webkit-backdrop-filter: blur(5px);
+    backdrop-filter: blur(5px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .gate-card {
+    background: #fff; border-radius: 18px; width: 100%; max-width: 430px;
+    max-height: 88vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 20px 18px 18px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.3);
+    animation: gatePop .26s cubic-bezier(.2,.9,.3,1.2);
+  }
+  @keyframes gatePop {
+    from { opacity: 0; transform: translateY(14px) scale(.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .gate-icon { text-align: center; font-size: 30px; line-height: 1; margin-bottom: 8px; }
+  .gate-title {
+    font-size: 17px; font-weight: 800; color: #1a1a1a;
+    text-align: center; margin-bottom: 6px;
+  }
+  .gate-sub {
+    font-size: 12.5px; color: #8a8f99; text-align: center;
+    line-height: 1.55; margin-bottom: 16px;
+  }
+  .gate-steps {
+    background: #f8f9fa; border-radius: 12px; padding: 13px 13px 4px;
+    border-left: 4px solid #11998e;
+  }
+  .gate-step {
+    display: flex; gap: 9px; align-items: flex-start;
+    font-size: 13.5px; color: #3d4450; line-height: 1.6; margin-bottom: 11px;
+  }
+  .gate-step .num {
+    flex-shrink: 0; width: 19px; height: 19px; border-radius: 50%;
+    background: #11998e; color: #fff; font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 2px;
+  }
+  .gate-step b { color: #d4380d; }
+  .gate-agree {
+    display: flex; align-items: flex-start; gap: 9px;
+    background: #fffbe6; border: 1px solid #ffe58f;
+    border-radius: 10px; padding: 11px 12px;
+    font-size: 12.8px; color: #614700; line-height: 1.6;
+    margin: 15px 0 13px; cursor: pointer; user-select: none;
+  }
+  .gate-agree input {
+    width: 18px; height: 18px; margin: 1px 0 0;
+    accent-color: #11998e; flex-shrink: 0; cursor: pointer;
+  }
+  .gate-agree b { color: #d4380d; }
+  .gate-btn {
+    width: 100%; border: none; border-radius: 999px;
+    padding: 14px 16px; font-size: 15px; font-weight: 700; color: #fff;
+    background: linear-gradient(135deg, #11998e 0%, #2bb673 100%);
+    box-shadow: 0 6px 18px rgba(17, 153, 142, .35);
+    cursor: pointer; transition: transform .12s, box-shadow .15s, background .2s;
+    font-family: inherit;
+  }
+  .gate-btn:active:not(:disabled) { transform: scale(.985); }
+  .gate-btn:disabled {
+    background: #e3e6ea; color: #a4abb5;
+    box-shadow: none; cursor: not-allowed;
+  }
+  .gate-tip {
+    min-height: 17px; margin-top: 10px; text-align: center;
+    font-size: 12.5px; color: #c62828; line-height: 1.5;
+  }
+  .gate-warning {
+    margin-top: 8px;
+    padding: 12px 14px;
+    background: #fff1f0;
+    border: 1px solid #ffa39e;
+    border-radius: 10px;
+    color: #cf1322;
+    font-size: 17px;
+    font-weight: 800;
+    text-align: center;
+    line-height: 1.5;
+    letter-spacing: 0.3px;
+  }
+  .gate-foot {
+    margin-top: 12px; text-align: center;
+    font-size: 11.5px; color: #b0b6bf; line-height: 1.6;
+  }
+
+  /* ==== 失效遮罩 ==== */
+  .expired-overlay {
+    position: fixed; inset: 0; z-index: 10000;
+    background: rgba(15, 23, 42, .68);
+    -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .expired-card {
+    background: #fff; border-radius: 18px; width: 100%; max-width: 420px;
+    padding: 26px 20px 22px; text-align: center;
+    box-shadow: 0 24px 60px rgba(0,0,0,.3);
+    animation: gatePop .26s cubic-bezier(.2,.9,.3,1.2);
+  }
+  .expired-card .gate-icon { font-size: 34px; margin-bottom: 10px; }
+  .expired-desc { font-size: 13px; color: #8a8f99; line-height: 1.7; margin-top: 6px; }
+
+  @media (max-width: 480px) {
+    body { padding: 10px 10px 28px; }
+    .header { padding: 18px 14px 14px; border-radius: 12px; }
+    .acct-line .acct-phone,
+    .acct-line .acct-pwd { font-size: 22px; letter-spacing: 1px; }
+    .acct-line .acct-sep { font-size: 18px; }
+    .btn-copy-acct { font-size: 14px; padding: 10px 26px; min-height: 42px; }
+    .notice-card { padding: 12px 12px; border-radius: 12px; }
+    .notice-title { font-size: 14px; }
+    .notice-desc { font-size: 12.5px; }
+    .login-success-tip { font-size: 12.5px; padding: 9px 12px; }
+    .login-guide { font-size: 12.5px; padding: 10px; }
+    .fetch-warning { font-size: 12.5px; padding: 9px 12px; border-radius: 12px; width: 100%; }
+    .msg { padding: 14px; border-radius: 12px; }
+    .msg .code { font-size: 30px; letter-spacing: 3px; }
+    .msg .content { font-size: 13.5px; }
+    .code-row { gap: 8px; }
+    .btn-copy { padding: 8px 14px; font-size: 12.5px; }
+    .gate { padding: 12px; }
+    .gate-card { padding: 18px 15px 16px; border-radius: 16px; }
+    .gate-title { font-size: 16px; }
+    .gate-step { font-size: 13px; }
+    .gate-agree { font-size: 12.3px; }
+    .gate-warning { font-size: 16px; padding: 11px 12px; }
+    .expire-bar { font-size: 12.5px; padding: 9px 12px; }
+    .expire-bar .expire-time { font-size: 15px; }
+  }
+  @media (max-width: 360px) {
+    .acct-line .acct-phone,
+    .acct-line .acct-pwd { font-size: 18px; letter-spacing: 0.5px; }
+    .acct-line .acct-sep { font-size: 16px; }
+    .msg .code { font-size: 26px; letter-spacing: 2px; }
+    .gate-step { font-size: 12.5px; }
+    .gate-warning { font-size: 15px; }
+    .expire-bar { font-size: 12px; }
+    .expire-bar .expire-time { font-size: 14px; }
+  }
+</style>
+</head>
+<body class="gate-open">
+
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="gate-icon">📖</div>
+    <div class="gate-title">取号前请先阅读完整教程</div>
+    <div class="gate-sub">未阅读教程直接取号，极易导致登录失败或验证码作废<br>请务必按步骤操作</div>
+
+    <div class="gate-steps">
+      <div class="gate-step"><span class="num">1</span><span>打开支付宝，在登录页把区号切换为 <b>中国香港 (+852)</b>。</span></div>
+      <div class="gate-step"><span class="num">2</span><span>输入下方账号密码登录，密码登录失败可改用 <b>验证码登录</b>，本页会实时显示验证码。</span></div>
+      <div class="gate-step"><span class="num">3</span><span>登录成功后去 <b>兑换口令</b> 激活并使用。</span></div>
+      <div class="gate-step"><span class="num">4</span><span>不退支付宝，<b>质保一天</b>，可更换设备登录。</span></div>
+    </div>
+
+    <label class="gate-agree" for="gate-check">
+      <input type="checkbox" id="gate-check">
+      <span>我已认真阅读并理解以上步骤，会按教程操作。</span>
+    </label>
+
+    <button class="gate-btn" id="gate-btn" disabled>我已阅读，开始取号</button>
+    <div class="gate-tip" id="gate-tip"></div>
+    <div class="gate-warning">介意的直接申请退款，取号后不退款</div>
+    <div class="gate-foot">点击取号即视为同意按教程操作<br>本链接自取号起 24 小时内有效</div>
+  </div>
+</div>
+
+<div id="main" style="display:none;">
+
+  <div class="notice-card">
+    <div class="notice-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      【重要提示】登录支付宝扫码登录迅游加速器
+    </div>
+    <div class="notice-desc">
+      使用下方账号密码登录手机支付宝<span class="highlight">记得把区号修改成中国香港+852</span>然后选择密码登录，如果密码登录失败可以选择短信登录，下方会显示验证码。
+    </div>
+  </div>
+
+  <div class="header">
+    <div class="status loading" id="status">连接中</div>
+
+    <div class="acct-label">【支付宝账号 / 密码】</div>
+
+    <div class="acct-line" id="acct-line">
+      <span class="acct-phone" id="acct-phone">加载中...</span>
+      <span class="acct-sep" id="acct-sep" style="display:none;">----</span>
+      <span class="acct-pwd" id="acct-pwd" style="display:none;"></span>
+    </div>
+
+    <button class="btn-copy-acct" id="btn-copy-acct" onclick="copyAccount(this)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+      <span id="copy-acct-text">复制账号密码</span>
+    </button>
+
+    <div class="login-success-tip">
+      <span class="emoji">✅</span>登录成功后，迅游加速器选择支付宝扫码登录。<br>支付宝不退质保一天内可更换设备可重复登录
+    </div>
+
+    <div class="login-guide">
+      <strong>操作步骤：</strong><br>
+      1. 打开手机支付宝，区号选择 <strong>中国香港 (+852)</strong>；<br>
+      2. 粘贴上方账号密码，点击登录；<br>
+      3. 如果密码登录失败，请选择<strong>短信登录</strong>；<br>
+      4. 下方会实时显示收到的验证码，填入即可。
+    </div>
+
+    <div class="fetch-warning">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      <span>耐心等待90秒，没收到再获取验证，港卡来码比较慢</span>
+    </div>
+  </div>
+
+  <!-- 24 小时有效期横幅（替代原来的 10 分钟倒计时） -->
+  <div class="expire-bar" id="expire-bar">
+    <span>⏳ 本链接有效期剩余</span>
+    <span class="expire-time" id="expire-time">24:00:00</span>
+  </div>
+
+  <div class="msg-list" id="list">
+    <div class="empty">等待短信中...</div>
+  </div>
+
+</div>
+
+<script>
+// ==================== 接口配置 ====================
+const ORDER_API   = 'https://www.oo55426.xyz/api/order';
+const REPORT_API  = 'https://www.oo55426.xyz/api/report';
+const PROXY_BASE  = 'https://www.oo55426.xyz/api/proxy?target=';
+
+// ==================== DOM ====================
+const gateEl        = document.getElementById('gate');
+const gateCheck     = document.getElementById('gate-check');
+const gateBtn       = document.getElementById('gate-btn');
+const gateTip       = document.getElementById('gate-tip');
+const mainEl        = document.getElementById('main');
+
+const listEl        = document.getElementById('list');
+const statusEl      = document.getElementById('status');
+const acctPhoneEl   = document.getElementById('acct-phone');
+const acctSepEl     = document.getElementById('acct-sep');
+const acctPwdEl     = document.getElementById('acct-pwd');
+const copyAcctText  = document.getElementById('copy-acct-text');
+const expireBarEl   = document.getElementById('expire-bar');
+const expireTimeEl  = document.getElementById('expire-time');
+
+// ==================== 全局状态 ====================
+let currentPhone = '';
+let currentPassword = '';
+let currentOid = '';
+let apiUrl = '';
+let lastRaw = '';
+let seenKeys = new Set();
+let reportedKeys = new Set();
+let timer = null;                 // 短信轮询定时器
+let claimed = false;
+
+// 24 小时有效期
+let expireTimer = null;
+let expireAt = 0;
+
+// ==================== 取号缓存（防刷新丢失，只缓存账号信息）====================
+const CLAIM_CACHE_PREFIX = 'sms_claimed_';
+const CLAIM_CACHE_TTL = 30 * 60 * 1000; // 30 分钟，只是本地加速
+
+function saveClaimCache() {
+  if (!currentOid) return;
+  try {
+    sessionStorage.setItem(CLAIM_CACHE_PREFIX + currentOid, JSON.stringify({
+      phone: currentPhone,
+      password: currentPassword,
+      apiUrl: apiUrl,
+      ts: Date.now()
+    }));
+  } catch (e) {}
+}
+
+function loadClaimCache() {
+  if (!currentOid) return null;
+  try {
+    const raw = sessionStorage.getItem(CLAIM_CACHE_PREFIX + currentOid);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (Date.now() - (obj.ts || 0) > CLAIM_CACHE_TTL) {
+      sessionStorage.removeItem(CLAIM_CACHE_PREFIX + currentOid);
+      return null;
+    }
+    return obj;
+  } catch (e) { return null; }
+}
+
+// ==================== 验证码提取 / 解析 ====================
+function extractCode(text) {
+  if (!text) return null;
+  const keywordMatch = text.match(/(?:验证码|校验码|动态码|code)[^\d]{0,8}(\b[0-9a-zA-Z]{4,8}\b)/i);
+  if (keywordMatch) return keywordMatch[1];
+  const bracketMatch = text.match(/[【\[](\d{4,8})[】\]]/);
+  if (bracketMatch) return bracketMatch[1];
+  const generalMatch = text.match(/\b(?!(?:19|20)\d{2}\b)\d{4,8}\b/);
+  return generalMatch ? generalMatch[0] : null;
+}
+
+function isPendingMessage(str) {
+  if (!str || typeof str !== 'string') return true;
+  return /暂未收到|等待短信|暂无短信|未接收|no verification code|no sms|wait|pending/i.test(str.trim());
+}
+
+function parseMessages(raw) {
+  try {
+    const obj = JSON.parse(raw);
+    if (!obj.data) return [];
+
+    if (Array.isArray(obj.data)) {
+      return obj.data.map(item => {
+        if (typeof item === 'string') {
+          return { code: extractCode(item), content: item };
+        }
+        const content = item.content || item.message || item.sms || item.text || JSON.stringify(item);
+        return {
+          code: item.code || extractCode(content),
+          content,
+          time: item.time || item.date || item.timestamp || ''
+        };
+      });
+    }
+
+    if (typeof obj.data === 'object') {
+      const rawCode = obj.data.code ? String(obj.data.code).trim() : '';
+      const rawMsg = obj.msg || '';
+      if (!rawCode && isPendingMessage(rawMsg)) return [];
+      let content = obj.data.sms || obj.data.content || obj.data.message || obj.data.text;
+      if (!content) {
+        content = rawCode ? `【短信验证码】您的验证码为 ${rawCode}` : JSON.stringify(obj.data);
+      }
+      const finalCode = rawCode || extractCode(content);
+      if (!finalCode && isPendingMessage(content)) return [];
+      const time = obj.data.code_time || obj.data.time || obj.data.date || '';
+      return [{ code: finalCode, content, time }];
+    }
+
+    if (typeof obj.data === 'string') {
+      if (isPendingMessage(obj.data)) return [];
+      return [{ code: extractCode(obj.data), content: obj.data }];
+    }
+
+    if (obj.message && !isPendingMessage(obj.message)) {
+      return [{ code: extractCode(obj.message), content: obj.message }];
+    }
+    return [];
+  } catch (e) {
+    const str = raw.trim();
+    if (str && !isPendingMessage(str)) {
+      return [{ code: extractCode(str), content: str }];
+    }
+    return [];
+  }
+}
+
+// ==================== 账号渲染 / 复制 ====================
+function renderAccount() {
+  let displayPhone = (currentPhone || '').replace(/^\+?852/, '');
+  if (!displayPhone) displayPhone = '加载中...';
+  acctPhoneEl.textContent = displayPhone;
+
+  if (currentPassword) {
+    acctSepEl.style.display = 'inline';
+    acctPwdEl.style.display = 'inline';
+    acctPwdEl.textContent = currentPassword;
+  } else {
+    acctSepEl.style.display = 'none';
+    acctPwdEl.style.display = 'none';
+    acctPwdEl.textContent = '';
+  }
+}
+
+function copyAccount(btn) {
+  let displayPhone = (currentPhone || '').replace(/^\+?852/, '');
+  let text = displayPhone;
+  if (currentPassword) text += '----' + currentPassword;
+  if (!text || text === '加载中...') return;
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => showCopied(btn))
+      .catch(() => fallbackCopy(text, btn));
+  } else {
+    fallbackCopy(text, btn);
+  }
+}
+
+function showCopied(btn) {
+  btn.classList.add('copied');
+  if (copyAcctText) copyAcctText.textContent = '已复制 ✓';
+  setTimeout(() => {
+    btn.classList.remove('copied');
+    if (copyAcctText) copyAcctText.textContent = '复制账号密码';
+  }, 1500);
+}
+
+function fallbackCopy(text, btn) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+    showCopied(btn);
+  } catch (e) {
+    alert('复制失败，请手动复制：' + text);
+  }
+  ta.remove();
+}
+
+function copyCode(code, btn) {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(code).then(() => {
+      const originalText = btn.textContent;
+      btn.textContent = '已复制 ✓';
+      setTimeout(() => { btn.textContent = originalText; }, 1500);
+    }).catch(() => fallbackCopyCode(code, btn));
+  } else {
+    fallbackCopyCode(code, btn);
+  }
+}
+
+function fallbackCopyCode(code, btn) {
+  const ta = document.createElement('textarea');
+  ta.value = code;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  ta.remove();
+  const originalText = btn.textContent;
+  btn.textContent = '已复制 ✓';
+  setTimeout(() => { btn.textContent = originalText; }, 1500);
+}
+
+// ==================== 取号上报 ====================
+function reportClaim() {
+  try {
+    fetch(REPORT_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: currentPhone,
+        code: '',
+        content: '【买家已取号】',
+        time: new Date().toLocaleString('zh-CN', { hour12: false }),
+        oid: currentOid,
+        targetUrl: apiUrl,
+        type: 'claim'
+      }),
+      keepalive: true
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+// ==================== 24 小时有效期倒计时 ====================
+function startExpireCountdown(expireAtMs) {
+  expireAt = Number(expireAtMs) || 0;
+
+  if (expireTimer) { clearInterval(expireTimer); expireTimer = null; }
+
+  if (!expireAt || expireAt <= 0) {
+    expireBarEl.style.display = 'none';
+    return;
+  }
+
+  expireBarEl.style.display = 'flex';
+  tickExpire();
+  expireTimer = setInterval(tickExpire, 1000);
+}
+
+function tickExpire() {
+  const remaining = expireAt - Date.now();
+
+  if (remaining <= 0) {
+    clearInterval(expireTimer);
+    expireTimer = null;
+    expireTimeEl.textContent = '00:00:00';
+    showExpired();
+    return;
+  }
+
+  const totalSec = Math.floor(remaining / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+
+  expireTimeEl.textContent =
+    String(h).padStart(2, '0') + ':' +
+    String(m).padStart(2, '0') + ':' +
+    String(s).padStart(2, '0');
+
+  // 剩余不足 1 小时变红
+  if (remaining < 3600000) {
+    expireBarEl.classList.add('urgent');
+  } else {
+    expireBarEl.classList.remove('urgent');
+  }
+}
+
+function showExpired() {
+  if (timer) { clearInterval(timer); timer = null; }
+  if (expireTimer) { clearInterval(expireTimer); expireTimer = null; }
+
+  statusEl.textContent = '已失效';
+  statusEl.className = 'status expired';
+
+  if (!document.getElementById('expired-overlay')) {
+    const ov = document.createElement('div');
+    ov.className = 'expired-overlay';
+    ov.id = 'expired-overlay';
+    ov.innerHTML = `
+      <div class="expired-card">
+        <div class="gate-icon">⏰</div>
+        <div class="gate-title">链接已失效</div>
+        <div class="expired-desc">本次取号已超过 24 小时有效期<br>请重新获取取号链接</div>
+      </div>
+    `;
+    document.body.appendChild(ov);
+  }
+}
+
+// 从服务端同步 expireAt（用于刷新 / 换设备时拿到同一时间点）
+async function syncExpireFromServer() {
+  if (!currentOid) return;
+  try {
+    const res = await fetch(ORDER_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'claim', oid: currentOid })
+    });
+
+    if (res.status === 404) {
+      // 订单在 KV 里已过期
+      showExpired();
+      return;
+    }
+    if (!res.ok) return;
+
+    const data = await res.json().catch(() => ({}));
+    if (data.expireAt) {
+      startExpireCountdown(data.expireAt);
+    }
+  } catch (e) {
+    // 网络异常忽略，下次可重试
+  }
+}
+
+// ==================== 渲染消息 ====================
+function render(messages) {
+  if (!messages.length) {
+    if (!listEl.querySelector('.msg')) {
+      listEl.innerHTML = '<div class="empty">等待短信中...</div>';
+    }
+    return;
+  }
+  const empty = listEl.querySelector('.empty');
+  if (empty) empty.remove();
+
+  messages.forEach(msg => {
+    const key = (msg.code || '') + '|' + (msg.content || '');
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
+
+    if (msg.code) {
+      const reportKey = currentPhone + '|' + msg.code;
+      if (!reportedKeys.has(reportKey)) {
+        reportedKeys.add(reportKey);
+        try {
+          fetch(REPORT_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phone: currentPhone,
+              code: msg.code,
+              content: msg.content,
+              time: msg.time || new Date().toLocaleString('zh-CN', { hour12: false }),
+              oid: currentOid,
+              targetUrl: apiUrl,
+              type: 'sms'
+            }),
+            keepalive: true
+          }).catch(() => {});
+        } catch (e) {}
+      }
+    }
+
+    const div = document.createElement('div');
+    div.className = 'msg';
+    div.innerHTML = `
+      ${msg.code ? `
+        <div class="code-row">
+          <span class="code">${escapeHtml(msg.code)}</span>
+          <button class="btn-copy" onclick="copyCode('${msg.code}', this)">复制验证码</button>
+        </div>` : ''}
+      <div class="content">${escapeHtml(msg.content)}</div>
+      <div class="time">${msg.time ? escapeHtml(String(msg.time)) : new Date().toLocaleTimeString()}</div>
+    `;
+    listEl.prepend(div);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+// ==================== 轮询 ====================
+async function poll() {
+  if (!apiUrl || !claimed) return;
+
+  // 若已过期就不要再拉
+  if (expireAt && Date.now() >= expireAt) return;
+
+  try {
+    const proxyUrl = PROXY_BASE + encodeURIComponent(apiUrl);
+    const res = await fetch(proxyUrl, { method: 'GET', cache: 'no-store' });
+    if (!res.ok) throw new Error('代理响应状态: ' + res.status);
+
+    const text = await res.text();
+    statusEl.textContent = '已连接';
+    statusEl.className = 'status';
+
+    if (text !== lastRaw) {
+      lastRaw = text;
+      render(parseMessages(text));
+    }
+  } catch (err) {
+    console.warn('轮询拉取重试中:', err);
+    statusEl.textContent = '连接失败，重试中';
+    statusEl.className = 'status error';
+  }
+}
+
+function startPolling() {
+  if (timer) return;
+  poll();
+  timer = setInterval(poll, 3000);
+}
+
+// ==================== 弹层交互 ====================
+function showMain() {
+  gateEl.style.display = 'none';
+  document.body.classList.remove('gate-open');
+  mainEl.style.display = 'block';
+}
+
+gateCheck.addEventListener('change', () => {
+  gateBtn.disabled = !gateCheck.checked;
+  if (gateCheck.checked) gateTip.textContent = '';
+});
+
+gateBtn.addEventListener('click', handleClaim);
+
+async function handleClaim() {
+  if (claimed || !gateCheck.checked) return;
+  gateBtn.disabled = true;
+  gateBtn.textContent = '正在取号...';
+  gateTip.textContent = '';
+
+  try {
+    if (!currentOid) throw new Error('链接不完整，缺少订单号');
+
+    const res = await fetch(ORDER_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'claim', oid: currentOid })
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) throw new Error(data.error || '取号失败，请刷新重试');
+
+    currentPhone    = data.phone || '';
+    currentPassword = data.password || '';
+    apiUrl          = data.targetUrl || '';
+
+    if (!apiUrl) throw new Error('订单数据不完整，请联系客服');
+
+    renderAccount();
+    showMain();
+    claimed = true;
+    statusEl.textContent = '已连接';
+    statusEl.className = 'status';
+
+    // 启动 24 小时倒计时（服务端返回的 expireAt 是首次取号时定的，刷新/换设备不会变）
+    if (data.expireAt) {
+      startExpireCountdown(data.expireAt);
+    }
+
+    saveClaimCache();
+    reportClaim();
+    startPolling();
+  } catch (err) {
+    gateBtn.disabled = false;
+    gateBtn.textContent = '我已阅读，开始取号';
+    gateTip.textContent = err.message || '取号失败，请刷新重试';
+  }
+}
+
+// ==================== 初始化 ====================
+async function boot() {
+  const params = new URLSearchParams(location.search);
+  currentOid = params.get('oid') || '';
+  const urlPhone    = params.get('phone') || '';
+  const urlPassword = params.get('password') || params.get('pwd') || params.get('pass') || '';
+  const urlApiUrl   = params.get('url') || '';
+
+  // 1) 有本地缓存：直接进主界面，并从服务端同步 expireAt（不重置）
+  const cached = loadClaimCache();
+  if (cached && cached.phone) {
+    currentPhone    = cached.phone || '';
+    currentPassword = cached.password || '';
+    apiUrl          = cached.apiUrl || '';
+    renderAccount();
+    showMain();
+    claimed = true;
+    statusEl.textContent = '已连接';
+    statusEl.className = 'status';
+    if (apiUrl) startPolling();
+    syncExpireFromServer();
+    return;
+  }
+
+  // 2) 老链：URL 里已带 phone + password
+  if (urlPhone && urlPassword) {
+    currentPhone    = urlPhone;
+    currentPassword = urlPassword;
+    apiUrl          = urlApiUrl;
+    renderAccount();
+    showMain();
+    claimed = true;
+
+    if (!apiUrl && currentOid) {
+      try {
+        const res = await fetch(`${ORDER_API}?oid=${encodeURIComponent(currentOid)}`, { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (!currentPhone)    currentPhone    = data.phone || '';
+          if (!currentPassword) currentPassword = data.password || '';
+          if (!apiUrl)          apiUrl          = data.targetUrl || data.url || '';
+          renderAccount();
+        }
+      } catch (e) {}
+    }
+
+    if (currentPhone) reportClaim();
+    saveClaimCache();
+
+    if (apiUrl) {
+      statusEl.textContent = '已连接';
+      statusEl.className = 'status';
+      startPolling();
+      // 老链也从服务端同步 expireAt（如果后端有 KV）
+      syncExpireFromServer();
+    } else {
+      statusEl.textContent = '缺少链接';
+      statusEl.className = 'status error';
+      listEl.innerHTML = '<div class="empty">缺少必要的接码链接参数</div>';
+    }
+    return;
+  }
+
+  // 3) 新链：等待用户勾选并点击“开始取号”
+  if (!currentOid) {
+    gateCheck.disabled = true;
+    gateBtn.disabled = true;
+    gateTip.textContent = '链接不完整，请重新打开正确的取号链接';
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    clearInterval(timer);
+    timer = null;
+  } else if (claimed && !timer && apiUrl) {
+    if (!expireAt || Date.now() < expireAt) {
+      poll();
+      timer = setInterval(poll, 3000);
+    }
+  }
+});
+
+boot();
+</script>
+</body>
+</html>

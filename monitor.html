@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多账号短信集中监控面板</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+    background: #f0f2f5;
+    color: #333;
+    padding: 20px;
+    min-height: 100vh;
+  }
+
+  /* 顶部导航与控制栏 */
+  .top-bar {
+    background: #fff;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .top-bar .title { font-size: 18px; font-weight: bold; color: #222; }
+  .top-bar .actions { display: flex; gap: 10px; align-items: center; }
+
+  /* ===== 顶部固定口令栏 ===== */
+  .token-bar {
+    background: #fff;
+    border-radius: 10px;
+    padding: 12px 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .token-bar .token-label {
+    font-size: 13px;
+    color: #666;
+    font-weight: 500;
+  }
+  .token-bar .token-tip {
+    font-size: 12px;
+    color: #aaa;
+    margin-left: auto;
+  }
+  .chip-token {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f9d58;
+    background: #e9f7ef;
+    border-color: #a8ddc0;
+    letter-spacing: 1px;
+    padding: 6px 14px;
+  }
+  .chip-token:hover { background: #d6f0e0; border-color: #0f9d58; }
+
+  button.btn {
+    padding: 7px 14px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background .2s;
+  }
+  .btn-primary { background: #1a73e8; color: #fff; }
+  .btn-primary:hover { background: #1558b0; }
+  .btn-success { background: #0f9d58; color: #fff; }
+  .btn-success:hover { background: #0b8043; }
+  .btn-danger { background: #ea4335; color: #fff; }
+  .btn-danger:hover { background: #d33828; }
+  .btn-gray { background: #e0e0e0; color: #555; }
+  .btn-gray:hover { background: #d5d5d5; }
+
+  /* 批量添加抽屉/区域 */
+  #admin-section {
+    display: none;
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  #admin-section textarea {
+    width: 100%;
+    height: 120px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 13px;
+    margin-top: 10px;
+  }
+
+  /* 搜索与过滤 */
+  .search-input {
+    padding: 7px 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 220px;
+    outline: none;
+  }
+
+  /* ===== 横向一行一行的列表布局 ===== */
+  #cards-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .row-item {
+    background: #fff;
+    border-radius: 10px;
+    padding: 12px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border-left: 4px solid #1a73e8;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .row-item.has-code {
+    border-left-color: #34a853;
+    background: #fafffb;
+  }
+
+  /* 号码区：前缀和号码分开 */
+  .phone-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+  .chip {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    cursor: pointer;
+    border-radius: 6px;
+    padding: 5px 10px;
+    border: 1px dashed #cfd8e3;
+    transition: background .15s, border-color .15s, transform .1s;
+    user-select: all;
+    white-space: nowrap;
+  }
+  .chip:active { transform: scale(0.96); }
+  .chip-prefix {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1a73e8;
+    background: #eef3fe;
+    border-color: #b9cdf5;
+  }
+  .chip-number {
+    font-size: 17px;
+    font-weight: 700;
+    color: #222;
+    letter-spacing: 1px;
+    background: #f7f8fa;
+  }
+  .chip:hover { background: #dbe7fd; border-color: #1a73e8; }
+
+  .mini-btn {
+    border: none;
+    background: #eef1f5;
+    color: #555;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background .15s;
+    white-space: nowrap;
+  }
+  .mini-btn:hover { background: #e0e5ec; }
+  .mini-btn.primary { background: #1a73e8; color: #fff; }
+  .mini-btn.primary:hover { background: #1558b0; }
+
+  /* 验证码区 */
+  .code-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    min-width: 160px;
+  }
+  .big-code {
+    font-size: 20px;
+    font-weight: bold;
+    color: #1a73e8;
+    letter-spacing: 2px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+
+  /* 短信内容 */
+  .sms-text {
+    flex: 1 1 240px;
+    min-width: 160px;
+    font-size: 13px;
+    color: #555;
+    line-height: 1.4;
+    max-height: 44px;
+    overflow-y: auto;
+    word-break: break-all;
+  }
+
+  /* 右侧状态 */
+  .row-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: #999;
+    flex: 0 0 auto;
+  }
+  .row-meta a { color: #1a73e8; text-decoration: none; }
+  .row-meta a:hover { text-decoration: underline; }
+
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #f1f3f5;
+    color: #666;
+    white-space: nowrap;
+  }
+  .badge.active { background: #e6f4ea; color: #137333; }
+  .badge.empty { background: #fef7e0; color: #b06000; }
+
+  .empty-tip {
+    text-align: center;
+    padding: 40px;
+    color: #999;
+    background: #fff;
+    border-radius: 10px;
+  }
+
+  /* 复制提示 */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 40px;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(0,0,0,.8);
+    color: #fff;
+    padding: 8px 18px;
+    border-radius: 20px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s, transform .25s;
+    z-index: 99999;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 720px) {
+    .row-item { align-items: flex-start; }
+    .sms-text { flex: 1 1 100%; }
+    .row-meta { flex: 1 1 100%; justify-content: flex-start; }
+    .token-bar .token-tip { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 页面顶部操作条 -->
+<div class="top-bar">
+  <div>
+    <span class="title">短信统一监控面板</span>
+    <span id="account-stat" style="font-size: 13px; color: #666; margin-left: 10px;">共 0 个号码</span>
+  </div>
+  <div class="actions">
+    <input type="text" class="search-input" id="search-box" placeholder="搜索手机号或短信内容..." oninput="handleSearch()" />
+    <button class="btn btn-primary" onclick="toggleAdminPanel()">配置账号池</button>
+    <button class="btn btn-success" onclick="refreshAllImmediately()">立即刷新全部</button>
+  </div>
+</div>
+
+<!-- ===== 顶部固定口令（点击即复制） ===== -->
+<div class="token-bar" id="token-bar">
+  <span class="token-label">口令</span>
+  <span class="chip chip-token" data-copy="xunyou456" title="点击复制 xunyou456">xunyou456</span>
+  <span class="chip chip-token" data-copy="TE727DUH" title="点击复制 TE727DUH">TE727DUH</span>
+  <span class="chip chip-token" data-copy="XY9898" title="点击复制 XY9898">XY9898</span>
+  <span class="token-tip">点击口令即可复制</span>
+</div>
+
+<!-- 管理员配置面板（支持批量导入） -->
+<div id="admin-section">
+  <h4>批量导入已注册好的账号接码链接</h4>
+  <p style="font-size: 12px; color: #666; margin-top: 4px;">格式：手机号----接码API链接（每行一条，例如兼容 sms8、四方等任何接口）</p>
+  <textarea id="import-input" placeholder="85252844792----https://api.sms8.net/api/record?token=bcp0j4...&#10;94217680----http://217api.com:9900/api/sms/getcode?token=..."></textarea>
+  <div style="margin-top: 10px; display: flex; gap: 10px;">
+    <button class="btn btn-primary" onclick="saveImportAccounts()">保存并开始监听</button>
+    <button class="btn btn-danger" onclick="clearAllAccounts()">清空账号池</button>
+    <button class="btn btn-gray" onclick="toggleAdminPanel()">收起面板</button>
+  </div>
+</div>
+
+<!-- 账号状态与短信行列表 -->
+<div id="cards-container"></div>
+
+<!-- 复制提示 -->
+<div id="toast"></div>
+
+<script>
+// ==================== 配置与存储键名 ====================
+const STORAGE_ACCOUNTS_KEY = 'global_registered_accounts';
+const PROXY_BASE = 'https://www.oo55426.xyz/api/proxy?target=';
+
+let accounts = [];
+let pollTimer = null;
+
+// ==================== 号码拆分（只识别 852 前缀，其他不拆分） ====================
+/**
+ * 把手机号拆成 { prefix, number }
+ * 规则：
+ *   - 如果数字以 852 开头且总长度 > 8，则去掉 852，prefix 为 '852' 或 '+852'，number 为剩余部分
+ *   - 其他所有情况一律不拆分，prefix 为空，number 为完整的数字串
+ */
+function splitPhone(phone) {
+  let s = String(phone || '').trim();
+  if (!s) return { prefix: '', number: '' };
+
+  const hasPlus = s.startsWith('+');
+  let digits = s.replace(/[^\d]/g, '');
+  if (!digits) return { prefix: '', number: '' };
+
+  // 只处理 852 前缀（香港），其他一律视为完整号码，不拆分
+  if (digits.startsWith('852') && digits.length > 8) {
+    const number = digits.slice(3);
+    return { prefix: hasPlus ? '+852' : '852', number };
+  }
+
+  return { prefix: '', number: digits };
+}
+
+// ==================== 从短信内容中提取纯数字验证码 ====================
+function extractNumericCode(text) {
+  if (!text) return '';
+  const str = String(text);
+
+  let m = str.match(/(?:验证码|校验码|动态码|code)[^\d]{0,8}(\d{4,8})/i);
+  if (m) return m[1];
+
+  m = str.match(/[【\[](\d{4,8})[】\]]/);
+  if (m) return m[1];
+
+  const matches = str.match(/\b\d{4,8}\b/g);
+  if (matches) {
+    for (const num of matches) {
+      if (!/^(19|20)\d{2}$/.test(num)) {
+        return num;
+      }
+    }
+  }
+
+  return '';
+}
+
+// ==================== 通用短信解析 ====================
+function isPending(str) {
+  if (!str || typeof str !== 'string') return true;
+  return /暂未收到|等待短信|暂无短信|未接收|no verification code|no sms|wait|pending/i.test(str.trim());
+}
+
+function parseSmsPayload(raw) {
+  try {
+    const obj = JSON.parse(raw);
+    if (!obj.data) return { code: '', content: '' };
+
+    if (Array.isArray(obj.data) && obj.data.length > 0) {
+      const first = obj.data[0];
+      const text = typeof first === 'string' ? first : (first.sms || first.content || first.message || JSON.stringify(first));
+      const code = extractNumericCode(text);
+      return { code, content: text, time: first.time || '' };
+    }
+
+    if (typeof obj.data === 'object') {
+      const rawCode = obj.data.code ? String(obj.data.code).trim() : '';
+      const content = obj.data.sms || obj.data.content || (rawCode ? `【短信验证码】${rawCode}` : '');
+
+      let code = '';
+      if (/^\d+$/.test(rawCode)) {
+        code = rawCode;
+      } else {
+        code = extractNumericCode(content);
+      }
+      if (!code && isPending(obj.msg)) return { code: '', content: '' };
+
+      return { code, content, time: obj.data.code_time || obj.data.time || '' };
+    }
+
+    if (typeof obj.data === 'string' && !isPending(obj.data)) {
+      return { code: extractNumericCode(obj.data), content: obj.data };
+    }
+  } catch (e) {
+    if (!isPending(raw)) {
+      return { code: extractNumericCode(raw), content: raw };
+    }
+  }
+  return { code: '', content: '' };
+}
+
+// ==================== 轮询请求 ====================
+async function checkSingleAccount(acc) {
+  try {
+    const url = `${PROXY_BASE}${encodeURIComponent(acc.targetUrl)}`;
+    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+    if (!res.ok) throw new Error('网络错误');
+    const text = await res.text();
+    const parsed = parseSmsPayload(text);
+
+    if (parsed.code || parsed.content) {
+      acc.lastCode = parsed.code;
+      acc.lastContent = parsed.content;
+      acc.lastTime = parsed.time || new Date().toLocaleTimeString();
+      acc.status = 'active';
+    } else {
+      acc.status = 'waiting';
+    }
+  } catch (err) {
+    acc.status = 'error';
+  }
+}
+
+async function pollAllAccounts() {
+  if (!accounts.length) return;
+  await Promise.allSettled(accounts.map(acc => checkSingleAccount(acc)));
+  renderCards(document.getElementById('search-box').value);
+}
+
+// ==================== 界面渲染 ====================
+function renderCards(filterKeyword = '') {
+  const container = document.getElementById('cards-container');
+  document.getElementById('account-stat').textContent = `共 ${accounts.length} 个账号`;
+
+  const kw = (filterKeyword || '').trim().toLowerCase();
+  const list = accounts.filter(a => {
+    if (!kw) return true;
+    return a.phone.toLowerCase().includes(kw) ||
+           (a.lastContent && a.lastContent.toLowerCase().includes(kw)) ||
+           (a.lastCode && String(a.lastCode).toLowerCase().includes(kw));
+  });
+
+  if (!list.length) {
+    container.innerHTML = `<div class="empty-tip">${
+      accounts.length === 0 ? '暂无账号，请点击右上角【配置账号池】批量导入' : '未搜到相关手机号或短信'
+    }</div>`;
+    return;
+  }
+
+  container.innerHTML = list.map(item => {
+    const { prefix, number } = splitPhone(item.phone);
+    const fullPhone = prefix + number;
+
+    let numericCode = extractNumericCode(item.lastContent);
+    if (!numericCode && item.lastCode && /^\d+$/.test(item.lastCode)) {
+      numericCode = item.lastCode;
+    }
+    const hasCode = !!numericCode;
+
+    return `
+      <div class="row-item ${hasCode ? 'has-code' : ''}">
+        <div class="phone-group">
+          ${prefix ? `<span class="chip chip-prefix" data-copy="${escapeHtml(prefix)}" title="点击复制 ${escapeHtml(prefix)}">${escapeHtml(prefix)}</span>` : ''}
+          <span class="chip chip-number" data-copy="${escapeHtml(number)}" title="点击复制 ${escapeHtml(number)}">${escapeHtml(number)}</span>
+          <button class="mini-btn" data-copy="${escapeHtml(fullPhone)}" title="复制完整号码">全号</button>
+        </div>
+
+        <div class="code-group">
+          <span class="big-code">${hasCode ? escapeHtml(numericCode) : '------'}</span>
+          ${hasCode ? `<button class="mini-btn primary" data-copy="${escapeHtml(numericCode)}">复制</button>` : ''}
+        </div>
+
+        <div class="sms-text">${item.lastContent ? escapeHtml(item.lastContent) : '<span style="color:#aaa;">暂无短信内容...</span>'}</div>
+
+        <div class="row-meta">
+          <span class="badge ${hasCode ? 'active' : 'empty'}">${hasCode ? '已收到' : (item.status === 'error' ? '请求失败' : '等待接收')}</span>
+          <span>${item.lastTime || '未同步'}</span>
+          <a href="${escapeHtml(item.targetUrl)}" target="_blank" rel="noopener">原始接口</a>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// 事件委托：所有带 data-copy 的元素点击即复制
+document.getElementById('cards-container').addEventListener('click', function (e) {
+  const el = e.target.closest('[data-copy]');
+  if (!el) return;
+  copyText(el.getAttribute('data-copy'));
+});
+
+// 顶部口令栏点击复制（写死的口令）
+document.getElementById('token-bar').addEventListener('click', function (e) {
+  const el = e.target.closest('[data-copy]');
+  if (!el) return;
+  copyText(el.getAttribute('data-copy'));
+});
+
+function handleSearch() {
+  renderCards(document.getElementById('search-box').value);
+}
+
+// ==================== 复制功能 ====================
+function copyText(txt) {
+  const text = String(txt == null ? '' : txt);
+  if (!text) return;
+
+  const done = () => showToast('已复制：' + text);
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+function fallbackCopy(text, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.top = '-1000px';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+    cb && cb();
+  } catch (e) {
+    alert('复制失败，请手动复制：' + text);
+  }
+  document.body.removeChild(ta);
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+// ==================== 账号批量保存与维护 ====================
+function toggleAdminPanel() {
+  const p = document.getElementById('admin-section');
+  p.style.display = p.style.display === 'block' ? 'none' : 'block';
+}
+
+function saveImportAccounts() {
+  const raw = document.getElementById('import-input').value.trim();
+  const lines = raw.split('\n').map(l => l.trim()).filter(l => l.includes('----'));
+
+  if (!lines.length) {
+    alert('未解析到格式正确的记录 (手机号----链接)');
+    return;
+  }
+
+  const newAccounts = lines.map((line, idx) => {
+    const p = line.indexOf('----');
+    return {
+      id: Date.now() + '_' + idx,
+      phone: line.slice(0, p).trim(),
+      targetUrl: line.slice(p + 4).trim(),
+      lastCode: '',
+      lastContent: '',
+      lastTime: '',
+      status: 'waiting'
+    };
+  });
+
+  accounts = newAccounts;
+  localStorage.setItem(STORAGE_ACCOUNTS_KEY, JSON.stringify(accounts));
+  document.getElementById('import-input').value = '';
+  toggleAdminPanel();
+  renderCards();
+  refreshAllImmediately();
+}
+
+function clearAllAccounts() {
+  if (confirm('确定清空所有配置的账号吗？')) {
+    accounts = [];
+    localStorage.removeItem(STORAGE_ACCOUNTS_KEY);
+    renderCards();
+  }
+}
+
+function refreshAllImmediately() {
+  pollAllAccounts();
+}
+
+// ==================== 初始化 ====================
+function initApp() {
+  try {
+    accounts = JSON.parse(localStorage.getItem(STORAGE_ACCOUNTS_KEY)) || [];
+  } catch (e) {
+    accounts = [];
+  }
+  renderCards();
+  pollAllAccounts();
+
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollAllAccounts, 4000);
+}
+
+initApp();
+</script>
+</body>
+</html>

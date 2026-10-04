@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#f5f6fa">
+<title>订单管理面板</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 16px 14px 40px;
+    background: #f5f6fa;
+    color: #222;
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ========== 密码遮罩 ========== */
+  #auth-mask {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+    padding: 20px;
+  }
+  .auth-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 28px 24px 22px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.2);
+    text-align: center;
+  }
+  .auth-card h3 {
+    font-size: 18px;
+    color: #222;
+    margin: 0 0 6px;
+    font-weight: 700;
+  }
+  .auth-tip {
+    font-size: 13px;
+    color: #888;
+    margin: 0 0 18px;
+  }
+  .auth-card input[type="password"] {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1.5px solid #d9d9d9;
+    border-radius: 10px;
+    font-size: 15px;
+    outline: none;
+    background: #fafbfc;
+    transition: border-color .15s;
+    box-sizing: border-box;
+    margin-bottom: 12px;
+    letter-spacing: 1px;
+  }
+  .auth-card input[type="password"]:focus {
+    border-color: #7c3aed;
+    background: #fff;
+  }
+  .auth-remember {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 16px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .auth-remember input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #7c3aed;
+    cursor: pointer;
+    margin: 0;
+  }
+  .auth-card .auth-btn {
+    width: 100%;
+    padding: 12px;
+    background: #7c3aed;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+    min-height: 46px;
+  }
+  .auth-card .auth-btn:hover { background: #6d28d9; }
+  .auth-card .auth-btn:active { transform: scale(0.98); }
+  .auth-error {
+    color: #d93025;
+    font-size: 13px;
+    margin-top: 12px;
+    min-height: 18px;
+  }
+
+  /* ========== 以下为主页面样式 ========== */
+  h1 { font-size: 20px; margin: 0 0 16px; color: #1a1a1a; font-weight: 700; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  h2 { font-size: 16px; margin: 0; color: #222; font-weight: 700; }
+
+  .panel {
+    background: #fff;
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    margin-bottom: 16px;
+  }
+
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  textarea {
+    width: 100%;
+    height: 140px;
+    padding: 12px;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+    background: #fafbfc;
+    transition: border-color .15s;
+  }
+  textarea:focus { border-color: #1a73e8; background: #fff; }
+
+  .input-single {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    outline: none;
+    background: #fafbfc;
+    transition: border-color .15s;
+    box-sizing: border-box;
+  }
+  .input-single:focus { border-color: #1a73e8; background: #fff; }
+
+  button {
+    padding: 9px 16px;
+    cursor: pointer;
+    border: none;
+    background: #1a73e8;
+    color: #fff;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background .15s, transform .1s;
+    white-space: nowrap;
+    min-height: 38px;
+  }
+  button:disabled { background: #9aa0a6; cursor: not-allowed; }
+  button:hover:not(:disabled) { background: #1558b0; }
+  button:active:not(:disabled) { transform: scale(0.97); }
+
+  .btn-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 9px 16px;
+    background: #7c3aed;
+    color: #fff;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background .15s, transform .1s;
+    min-height: 38px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .btn-link:hover { background: #6d28d9; }
+  .btn-link:active { transform: scale(0.97); }
+
+  /* 新版入口按钮（绿色） */
+  .btn-link.new-version {
+    background: #0f9d58;
+    font-size: 12.5px;
+    padding: 6px 12px;
+    min-height: 32px;
+  }
+  .btn-link.new-version:hover { background: #0b8043; }
+
+  /* 总接收记录按钮（紫色） */
+  .btn-link.records-link {
+    background: #7c3aed;
+  }
+  .btn-link.records-link:hover { background: #6d28d9; }
+
+  .btn-copy-all { background: #0f9d58; }
+  .btn-copy-all:hover:not(:disabled) { background: #0b8043; }
+  .btn-danger { background: #d93025; }
+  .btn-danger:hover:not(:disabled) { background: #b31412; }
+  .btn-secondary { background: #5f6368; }
+  .btn-secondary:hover:not(:disabled) { background: #494c50; }
+
+  .btn-group { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  .tip { color: #888; font-size: 12.5px; margin-top: 10px; line-height: 1.6; }
+  .empty-tip {
+    color: #999;
+    font-size: 14px;
+    padding: 30px 10px;
+    text-align: center;
+    background: #fafbfc;
+    border-radius: 10px;
+  }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  .order-card {
+    background: #fafbfc;
+    border: 1px solid #eef1f5;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: opacity .2s, background .2s;
+  }
+  .order-card:last-child { margin-bottom: 0; }
+  .order-card.released { background: #f5f5f5; opacity: 0.65; }
+  .order-card.released .link-box { text-decoration: line-through; color: #999; }
+
+  .order-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .phone {
+    font-weight: 700;
+    font-size: 15px;
+    color: #222;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing: 0.5px;
+  }
+  .time-badge { font-size: 12px; color: #999; font-weight: normal; }
+  .released-badge {
+    display: inline-block;
+    font-size: 11px;
+    background: #ffebee;
+    color: #c62828;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    margin-left: 6px;
+  }
+
+  .link-box {
+    font-size: 12.5px;
+    color: #1a73e8;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: #fff;
+    border: 1px solid #eef1f5;
+    padding: 8px 10px;
+    border-radius: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    word-break: break-all;
+  }
+
+  .card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .card-actions button {
+    padding: 7px 12px;
+    font-size: 12.5px;
+    min-height: 34px;
+    border-radius: 8px;
+  }
+  .btn-copy { background: #34a853; }
+  .btn-copy:hover:not(:disabled) { background: #2d9249; }
+  .btn-open { background: #ea4335; }
+  .btn-open:hover:not(:disabled) { background: #d33828; }
+  .btn-release { background: #f57c00; }
+  .btn-release:hover:not(:disabled) { background: #e65100; }
+  .btn-release:disabled { background: #cfd8dc; color: #666; }
+
+  .scroll-box { max-height: 640px; overflow-y: auto; padding-right: 4px; }
+  .scroll-box::-webkit-scrollbar { width: 6px; }
+  .scroll-box::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 3px; }
+
+  .collapsible-header {
+    cursor: pointer;
+    user-select: none;
+    margin-bottom: 0;
+    padding: 4px 2px;
+    transition: background .15s;
+    border-radius: 8px;
+  }
+  .collapsible-header:hover { background: #fafbfc; }
+  .collapsible-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .collapsible-header .arrow {
+    display: inline-block;
+    font-size: 11px;
+    color: #888;
+    transition: transform .2s;
+    width: 12px;
+    text-align: center;
+  }
+  .collapsible-header.open .arrow { transform: rotate(90deg); }
+  .collapsible-body { margin-top: 12px; }
+
+  .release-result {
+    display: none;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .release-result.show { display: block; }
+  .release-result.success {
+    background: #e6f4ea;
+    color: #0f9d58;
+    border: 1px solid #b7e0c4;
+  }
+  .release-result.error {
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ffcdd2;
+  }
+
+  @media (max-width: 480px) {
+    body { padding: 12px 10px 32px; font-size: 14px; }
+    h1 { font-size: 18px; margin-bottom: 12px; }
+    h2 { font-size: 15px; }
+
+    .panel { padding: 14px; border-radius: 12px; margin-bottom: 12px; }
+    textarea { height: 120px; font-size: 12.5px; }
+    .input-single { font-size: 12.5px; padding: 12px; }
+
+    button { font-size: 13px; padding: 9px 14px; min-height: 40px; }
+    .btn-link { font-size: 13px; padding: 9px 14px; min-height: 40px; }
+    .btn-link.new-version { font-size: 12px; padding: 6px 10px; min-height: 30px; }
+
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .btn-group > button,
+    .btn-group > a.btn-link {
+      width: 100%;
+      justify-content: center;
+      display: inline-flex;
+      align-items: center;
+    }
+    .btn-group > button:only-child { grid-column: 1 / -1; }
+
+    .order-card { padding: 12px; }
+    .card-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+    .card-actions > button {
+      width: 100%;
+      padding: 8px 6px;
+      font-size: 12px;
+      min-height: 36px;
+    }
+
+    .phone { font-size: 14px; }
+    .link-box { font-size: 12px; padding: 8px; }
+
+    .auth-card { padding: 24px 20px 20px; }
+    .auth-card h3 { font-size: 17px; }
+  }
+
+  @media (max-width: 340px) {
+    .card-actions { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== 密码遮罩 ========== -->
+<div id="auth-mask">
+  <div class="auth-card">
+    <h3>🔒 订单管理面板</h3>
+    <p class="auth-tip">请输入访问密码</p>
+    <input type="password" id="auth-pwd" placeholder="输入密码" autocomplete="current-password" />
+    <label class="auth-remember">
+      <input type="checkbox" id="auth-remember" checked />
+      <span>记住密码（下次自动登录）</span>
+    </label>
+    <button class="auth-btn" onclick="handleAuth()">进入面板</button>
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<!-- ========== 主页面内容（默认隐藏，密码通过后显示） ========== -->
+<div id="main-content" style="display:none;">
+
+<h1>
+  订单管理面板
+  <a href="admin_sms.html" class="btn-link new-version">📱 支付宝订单面板 →</a>
+</h1>
+
+<!-- 批量粘贴区域 -->
+<div class="panel">
+  <div class="panel-header">
+    <h2>批量粘贴订单</h2>
+  </div>
+  <textarea id="input" placeholder="每行格式：手机号----链接&#10;例如：85252844792----http://54.169.181.40:8082/...&#10;例如：94217680----http://217api.com:9900/api/sms/getcode?token=..."></textarea>
+  <div class="btn-group" style="margin-top: 12px;">
+    <button id="btn-submit" onclick="parseOrders()">批量生成短码链接</button>
+    <button id="btn-copy-all" class="btn-copy-all" style="display:none;" onclick="copyCurrentOrders(this)">复制当前批次短链</button>
+    <a href="records.html" target="_blank" class="btn-link records-link">📊 总接收记录</a>
+    <a href="https://oo55426.pages.dev/resolve" target="_blank" rel="noopener" class="btn-link">🔗 短链还原</a>
+  </div>
+  <div class="tip">
+    手机号规则：带 852 前缀的自动去掉 852；没有 852 的默认取前面的 8 位数字作为手机号，不做拆分。释放按钮用于客户退款后作废链接；点击「总接收记录」可查看用户上报的验证码和对应原始长链接（即使订单已释放也永久可查）。
+  </div>
+</div>
+
+<!-- 手动失效订单 -->
+<div class="panel">
+  <div class="panel-header">
+    <h2>⚠️ 手动失效订单</h2>
+  </div>
+  <div class="tip" style="margin-top:0; margin-bottom:10px;">
+    粘贴用户短链（或直接输入 oid），点击下方按钮即可让该订单立即失效。适用于客户退款、换单、或链接泄露等场景。
+  </div>
+  <input type="text" id="release-input" class="input-single"
+         placeholder="粘贴短链，例如：https://xxx/index.html?oid=ABC123&#10;或直接输入 oid：ABC123" />
+  <div class="btn-group" style="margin-top: 12px;">
+    <button class="btn-danger" onclick="releaseByShortLink()">🚫 立即失效该订单</button>
+    <button class="btn-secondary" onclick="clearReleaseInput()">清空</button>
+  </div>
+  <div class="release-result" id="release-result"></div>
+</div>
+
+<!-- 单栏布局 -->
+<div class="main-grid">
+
+  <div class="col">
+    <div class="panel">
+      <div class="panel-header">
+        <h2>本次生成结果</h2>
+        <span id="current-count" class="time-badge"></span>
+      </div>
+      <div id="list">
+        <div class="empty-tip">等待生成...</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header collapsible-header" onclick="toggleHistoryPanel()">
+        <h2>
+          <span class="arrow" id="history-arrow">▶</span>
+          历史订单记录 (<span id="history-count">0</span>)
+        </h2>
+        <div class="btn-group" onclick="event.stopPropagation();">
+          <button class="btn-secondary" onclick="copyAllHistoryLinks(this)">一键复制全部短链</button>
+          <button class="btn-danger" onclick="clearHistory()">清空</button>
+        </div>
+      </div>
+      <div class="scroll-box collapsible-body" id="history-body" style="display:none;">
+        <div id="history-list"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</div><!-- /main-content -->
+
+<script>
+// ==================== 密码保护 ====================
+const AUTH_PASSWORD = 'shinia299.';           // ← 密码（末尾有个点）
+const AUTH_KEY_LOCAL = 'admin_auth_pwd';      // 记住密码 → localStorage
+const AUTH_KEY_SESSION = 'admin_auth_pwd_session'; // 本次会话 → sessionStorage
+
+// 检查是否已通过
+function checkAuth() {
+  return localStorage.getItem(AUTH_KEY_LOCAL) === AUTH_PASSWORD ||
+         sessionStorage.getItem(AUTH_KEY_SESSION) === AUTH_PASSWORD;
+}
+
+// 处理登录
+function handleAuth() {
+  const input = document.getElementById('auth-pwd');
+  const remember = document.getElementById('auth-remember').checked;
+  const errEl = document.getElementById('auth-error');
+  const pwd = input.value;
+
+  if (pwd === AUTH_PASSWORD) {
+    if (remember) {
+      localStorage.setItem(AUTH_KEY_LOCAL, pwd);
+      sessionStorage.removeItem(AUTH_KEY_SESSION);
+    } else {
+      sessionStorage.setItem(AUTH_KEY_SESSION, pwd);
+      localStorage.removeItem(AUTH_KEY_LOCAL);
+    }
+    errEl.textContent = '';
+    hideAuthAndInit();
+  } else {
+    errEl.textContent = '密码错误，请重试';
+    input.value = '';
+    input.focus();
+  }
+}
+
+// 隐藏遮罩并初始化主页面
+function hideAuthAndInit() {
+  document.getElementById('auth-mask').style.display = 'none';
+  document.getElementById('main-content').style.display = 'block';
+  initApp();
+}
+
+// ==================== 主应用逻辑 ====================
+const ORDER_API = 'https://www.oo55426.xyz/api/order';
+const STORAGE_KEY = 'admin_order_history';
+const RELEASE_ACTION = 'release';
+
+let generatedOrders = [];
+let appInited = false;
+
+function initApp() {
+  if (appInited) return;
+  appInited = true;
+
+  renderHistory();
+}
+
+// ==================== 通用工具 ====================
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+/**
+ * 手机号清洗规则：
+ *  1) 先只保留数字（去掉 +、空格、横线等）
+ *  2) 如果开头是 852 且总长度 > 8  → 去掉 852 前缀
+ *  3) 如果没有 852 前缀 → 前面的 8 位数字就是手机号，原样返回，不做拆分
+ *  例：85252844792 → 52844792
+ *      94217680    → 94217680
+ */
+function cleanPhone(rawPhone) {
+  let p = String(rawPhone == null ? '' : rawPhone).replace(/\D/g, '');
+  if (!p) return '';
+
+  if (p.startsWith('852') && p.length > 8) {
+    p = p.slice(3);
+  }
+  // 没有 852 前缀时：整串数字即为手机号，不拆分
+  return p;
+}
+
+function formatTime(timestamp) {
+  const d = new Date(timestamp);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function toggleHistoryPanel() {
+  const header = document.querySelector('.collapsible-header');
+  const body = document.getElementById('history-body');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  header.classList.toggle('open', !isOpen);
+}
+
+function extractOid(line) {
+  const s = String(line || '').trim();
+  if (!s) return '';
+  try {
+    const url = new URL(s);
+    const oid = url.searchParams.get('oid');
+    if (oid) return oid.trim();
+  } catch (e) {}
+  const m = s.match(/[?&]oid=([A-Za-z0-9]+)/);
+  if (m) return m[1].trim();
+  if (/^[A-Za-z0-9]{4,12}$/.test(s)) return s;
+  return '';
+}
+
+// ==================== 手动失效 ====================
+async function releaseByShortLink() {
+  const input = document.getElementById('release-input');
+  const raw = (input.value || '').trim();
+
+  if (!raw) {
+    showReleaseResult('error', '请先粘贴短链或 oid');
+    return;
+  }
+
+  const oid = extractOid(raw);
+  if (!oid) {
+    showReleaseResult('error', '无法从输入中识别出 oid，请检查格式');
+    return;
+  }
+
+  if (!confirm(`确定要让订单【${oid}】立即失效吗？\n失效后用户端链接会立刻打不开，此操作不可撤销。`)) {
+    return;
+  }
+
+  showReleaseResult('success', `正在失效订单 ${oid} ...`);
+
+  try {
+    const res = await fetch(ORDER_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: RELEASE_ACTION, oid })
+    });
+
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+
+    if (!res.ok && data.error && !/not found|already|expired/i.test(data.error)) {
+      throw new Error(data.error);
+    }
+
+    updateHistoryOrder(oid, { released: true, releasedAt: Date.now() });
+    const cur = generatedOrders.find(o => o.oid === oid);
+    if (cur) cur.released = true;
+    renderCurrentOrders();
+    renderHistory();
+
+    showReleaseResult('success', `✅ 订单 ${oid} 已失效，用户端链接将立即打不开。`);
+    input.value = '';
+  } catch (err) {
+    showReleaseResult('error', `❌ 失效失败：${err.message}`);
+  }
+}
+
+function showReleaseResult(type, msg) {
+  const el = document.getElementById('release-result');
+  el.className = 'release-result show ' + type;
+  el.textContent = msg;
+}
+
+function clearReleaseInput() {
+  document.getElementById('release-input').value = '';
+  const el = document.getElementById('release-result');
+  el.className = 'release-result';
+  el.textContent = '';
+}
+
+// ==================== 历史订单 ====================
+function getHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveHistory(history) {
+  if (history.length > 1000) history = history.slice(0, 1000);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+}
+
+function saveOrderToHistory(order) {
+  const history = getHistory();
+  history.unshift(order);
+  saveHistory(history);
+}
+
+function updateHistoryOrder(oid, patch) {
+  const history = getHistory();
+  const item = history.find(h => h.oid === oid);
+  if (item) {
+    Object.assign(item, patch);
+    saveHistory(history);
+  }
+}
+
+// ==================== 释放订单（卡片按钮） ====================
+async function releaseOrder(oid, phone, btn) {
+  if (!confirm(`确定要释放【${phone}】的订单吗？\n释放后用户端的链接会立即失效，请确认客户已退款或已过期。`)) {
+    return;
+  }
+
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '释放中...';
+
+  try {
+    const res = await fetch(ORDER_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: RELEASE_ACTION, oid })
+    });
+
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+
+    if (!res.ok && data.error && !/not found|already|expired/i.test(data.error)) {
+      throw new Error(data.error);
+    }
+
+    updateHistoryOrder(oid, { released: true, releasedAt: Date.now() });
+    const cur = generatedOrders.find(o => o.oid === oid);
+    if (cur) cur.released = true;
+
+    renderCurrentOrders();
+    renderHistory();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = oldText;
+    alert('释放失败：' + err.message);
+  }
+}
+
+// ==================== 渲染订单卡片 ====================
+function renderOrderCard(item) {
+  if (item.error) {
+    return `
+      <div class="order-card">
+        <div class="order-top">
+          <span class="phone">${escapeHtml(item.phone)}</span>
+        </div>
+        <div class="link-box" style="color:#c62828; border-color:#ffcdd2; background:#ffebee;">
+          生成失败: ${escapeHtml(item.error)}
+        </div>
+      </div>
+    `;
+  }
+
+  const releasedClass = item.released ? 'released' : '';
+  const releasedBadge = item.released ? '<span class="released-badge">已释放</span>' : '';
+  const releaseBtn = item.released
+    ? '<button class="btn-release" disabled>已释放</button>'
+    : `<button class="btn-release" onclick="releaseOrder('${item.oid}', '${escapeHtml(item.phone)}', this)">释放</button>`;
+
+  return `
+    <div class="order-card ${releasedClass}">
+      <div class="order-top">
+        <span class="phone">${escapeHtml(item.phone)}${releasedBadge}</span>
+      </div>
+      <div class="link-box" title="${escapeHtml(item.userLink)}">${escapeHtml(item.userLink)}</div>
+      <div class="card-actions">
+        <button class="btn-copy" onclick="copyLink('${item.userLink}', this)">复制链接</button>
+        <button class="btn-open" onclick="window.open('${item.userLink}', '_blank')">打开</button>
+        ${releaseBtn}
+      </div>
+    </div>
+  `;
+}
+
+function renderCurrentOrders() {
+  const list = document.getElementById('list');
+  const countEl = document.getElementById('current-count');
+  const valid = generatedOrders.filter(o => !o.error);
+
+  if (countEl) countEl.textContent = generatedOrders.length ? `${valid.length}/${generatedOrders.length} 成功` : '';
+
+  if (!generatedOrders.length) {
+    if (!list.querySelector('.empty-tip')) {
+      list.innerHTML = '<div class="empty-tip">等待生成...</div>';
+    }
+    return;
+  }
+  list.innerHTML = generatedOrders.map(renderOrderCard).join('');
+}
+
+function renderHistory() {
+  const history = getHistory();
+  const container = document.getElementById('history-list');
+  document.getElementById('history-count').textContent = history.length;
+
+  if (history.length === 0) {
+    container.innerHTML = '<div class="empty-tip">暂无历史订单记录</div>';
+    return;
+  }
+
+  container.innerHTML = history.map(item => {
+    const releasedClass = item.released ? 'released' : '';
+    const releasedBadge = item.released ? '<span class="released-badge">已释放</span>' : '';
+    const releaseBtn = item.released
+      ? '<button class="btn-release" disabled>已释放</button>'
+      : `<button class="btn-release" onclick="releaseOrder('${item.oid}', '${escapeHtml(item.phone)}', this)">释放</button>`;
+
+    return `
+      <div class="order-card ${releasedClass}">
+        <div class="order-top">
+          <span class="phone">${escapeHtml(item.phone)}${releasedBadge}</span>
+          <span class="time-badge">${formatTime(item.createdAt)}</span>
+        </div>
+        <div class="link-box" title="${escapeHtml(item.userLink)}">${escapeHtml(item.userLink)}</div>
+        <div class="card-actions">
+          <button class="btn-copy" onclick="copyLink('${item.userLink}', this)">复制链接</button>
+          <button class="btn-open" onclick="window.open('${item.userLink}', '_blank')">打开</button>
+          ${releaseBtn}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function clearHistory() {
+  if (confirm('确定要清空所有历史记录吗？\n注意：这只会清空本地记录，不会释放线上订单。')) {
+    localStorage.removeItem(STORAGE_KEY);
+    renderHistory();
+  }
+}
+
+// ==================== 批量生成短码 ====================
+async function parseOrders() {
+  const raw = document.getElementById('input').value.trim();
+  const lines = raw.split('\n').map(l => l.trim()).filter(l => l.includes('----'));
+  const list = document.getElementById('list');
+  const btn = document.getElementById('btn-submit');
+  const btnCopyAll = document.getElementById('btn-copy-all');
+
+  list.innerHTML = '';
+  generatedOrders = [];
+  btnCopyAll.style.display = 'none';
+
+  if (!lines.length) {
+    list.innerHTML = '<div class="empty-tip" style="color:#c62828;">没有解析到有效订单</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '正在批量分配短码...';
+
+  // ★ 关键改动：不再拼接 index.html，直接以目录路径结尾
+  //   例如 admin.html 在根目录 → https://oo55426.pages.dev/
+  //        在 /admin/ 目录 → https://xxx.com/admin/
+  const dirPath = location.pathname.replace(/[^/]*$/, '');
+  const baseUrl = `${location.origin}${dirPath}`;
+
+  for (const line of lines) {
+    const idx = line.indexOf('----');
+    const rawPhone = line.slice(0, idx).trim();
+    const targetUrl = line.slice(idx + 4).trim();
+    const phone = cleanPhone(rawPhone);
+
+    try {
+      const res = await fetch(ORDER_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, targetUrl })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '创建短码失败');
+
+      const userLink = `${baseUrl}?oid=${data.oid}`;
+      generatedOrders.push({
+        phone, targetUrl, userLink,
+        oid: data.oid, createdAt: Date.now(), released: false
+      });
+    } catch (err) {
+      generatedOrders.push({ phone, error: err.message });
+    }
+  }
+
+  const history = getHistory();
+  const newOrders = generatedOrders.filter(o => !o.error);
+  history.unshift(...newOrders);
+  saveHistory(history);
+
+  btn.disabled = false;
+  btn.textContent = '批量生成短码链接';
+
+  if (newOrders.length > 0) {
+    btnCopyAll.style.display = 'inline-block';
+  }
+
+  renderCurrentOrders();
+  renderHistory();
+}
+
+// ==================== 复制工具 ====================
+function copyLink(link, btn) {
+  doCopy(link, btn, '已复制 ✓', 1500);
+}
+
+function copyCurrentOrders(btn) {
+  const links = generatedOrders.filter(o => !o.error).map(o => o.userLink);
+  if (!links.length) return;
+  doCopy(links.join('\n'), btn, '短链已全部复制 ✓', 2000);
+}
+
+function copyAllHistoryLinks(btn) {
+  const history = getHistory();
+  const links = history.filter(h => !h.released).map(h => h.userLink);
+  if (!links.length) {
+    alert('暂无可复制的链接（已释放的不计入）');
+    return;
+  }
+  doCopy(links.join('\n'), btn, '历史短链已全部复制 ✓', 2000);
+}
+
+function doCopy(text, btn, successMsg, duration) {
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+    const old = btn.textContent;
+    btn.textContent = successMsg;
+    setTimeout(() => btn.textContent = old, duration);
+  };
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      const old = btn.textContent;
+      btn.textContent = successMsg;
+      setTimeout(() => btn.textContent = old, duration);
+    }).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+// ==================== 启动 ====================
+window.addEventListener('DOMContentLoaded', () => {
+  // 密码输入框支持回车
+  const pwdInput = document.getElementById('auth-pwd');
+  if (pwdInput) {
+    pwdInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') handleAuth();
+    });
+  }
+
+  // 已有密码 → 直接进入
+  if (checkAuth()) {
+    hideAuthAndInit();
+  } else {
+    // 显示遮罩，聚焦输入框
+    setTimeout(() => {
+      if (pwdInput) pwdInput.focus();
+    }, 100);
+  }
+});
+</script>
+</body>
+</html>

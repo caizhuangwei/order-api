@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>短链还原工具</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", sans-serif; padding: 20px; background:#f5f6fa; }
+  h2 { color:#222; margin-top: 0; }
+  .card {
+    background:#fff; border-radius:10px; padding:20px;
+    box-shadow:0 2px 8px rgba(0,0,0,.06); margin-bottom:16px;
+  }
+  textarea {
+    width:100%; height:120px; padding:10px;
+    border:1px solid #ccc; border-radius:8px;
+    font-family:monospace; font-size:13px; box-sizing:border-box;
+  }
+  .btn-group { display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  button {
+    padding:8px 16px; cursor:pointer; border:none;
+    background:#1a73e8; color:#fff; border-radius:6px; font-size:14px;
+  }
+  button:disabled { background:#9aa0a6; cursor:not-allowed; }
+  button:hover:not(:disabled) { background:#1558b0; }
+  .btn-green { background:#0f9d58; }
+  .btn-green:hover:not(:disabled) { background:#0b8043; }
+  .btn-gray { background:#5f6368; }
+  .btn-gray:hover:not(:disabled) { background:#494c50; }
+
+  .result-row {
+    background:#fff; border-radius:10px; padding:14px 16px;
+    margin:10px 0; display:flex; justify-content:space-between;
+    align-items:center; box-shadow:0 2px 6px rgba(0,0,0,.06);
+    gap:10px; flex-wrap:wrap;
+  }
+  .result-oid {
+    font-family:monospace; font-weight:700; color:#7c3aed;
+    min-width:80px;
+  }
+  .result-phone {
+    font-weight:600; color:#222; min-width:90px;
+  }
+  .result-url {
+    flex:1; font-size:13px; color:#1a73e8; font-family:monospace;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    background:#f1f3f5; padding:6px 10px; border-radius:6px;
+    min-width:200px;
+  }
+  .result-error {
+    flex:1; color:#c62828; font-size:13px;
+  }
+  .btn-copy-sm {
+    background:#34a853; white-space:nowrap; padding:6px 12px;
+    font-size:12px;
+  }
+  .btn-copy-sm:hover { background:#2d9249; }
+  .tip { color:#888; font-size:13px; margin-top:8px; }
+  .empty-tip { color:#999; font-size:14px; padding:20px 0; }
+</style>
+</head>
+<body>
+
+<h2>短链还原工具</h2>
+<div class="card">
+  <p style="font-size:13px; color:#666; margin:0 0 8px;">
+    粘贴用户短链（每行一条），自动提取其中的 oid 并还原原始接码链接。
+  </p>
+  <textarea id="input" placeholder="每行一条短链，例如：&#10;https://www.oo55426.xyz/index.html?oid=ABC123&#10;https://你的域名/index.html?oid=XYZ789&#10;也可以直接填 oid：ABC123"></textarea>
+  <div class="btn-group">
+    <button id="btn-resolve" onclick="resolveAll()">开始还原</button>
+    <button class="btn-green" onclick="copyAllResults(this)">复制全部原始链接</button>
+    <button class="btn-gray" onclick="clearAll()">清空</button>
+  </div>
+  <div class="tip">原理：从短链中提取 <code>oid</code> 参数，调用后端 <code>/api/resolve</code> 查回原始 targetUrl。</div>
+</div>
+
+<h2>还原结果</h2>
+<div id="results">
+  <div class="empty-tip">等待还原...</div>
+</div>
+
+<script>
+const RESOLVE_API = 'https://www.oo55426.xyz/api/resolve';
+
+// 保存本次还原成功的完整链接，供"复制全部"使用
+let resolvedUrls = [];
+
+/**
+ * 从短链或纯 oid 中提取 oid
+ */
+function extractOid(line) {
+  const s = line.trim();
+  if (!s) return '';
+
+  try {
+    const url = new URL(s);
+    const oid = url.searchParams.get('oid');
+    if (oid) return oid.trim();
+  } catch (e) {}
+
+  const m = s.match(/[?&]oid=([A-Za-z0-9]+)/);
+  if (m) return m[1].trim();
+
+  if (/^[A-Za-z0-9]{4,12}$/.test(s)) return s;
+
+  return '';
+}
+
+async function resolveOne(oid) {
+  const url = `${RESOLVE_API}?oid=${encodeURIComponent(oid)}`;
+  const res = await fetch(url, { cache: 'no-store' });
+
+  let data = {};
+  try { data = await res.json(); } catch (e) {}
+
+  if (!res.ok) {
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return data;
+}
+
+async function resolveAll() {
+  const raw = document.getElementById('input').value;
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const resultsEl = document.getElementById('results');
+  const btn = document.getElementById('btn-resolve');
+
+  if (!lines.length) {
+    resultsEl.innerHTML = '<div class="empty-tip">请先粘贴短链</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '还原中...';
+  resultsEl.innerHTML = '';
+  resolvedUrls = [];
+
+  for (const line of lines) {
+    const oid = extractOid(line);
+    const card = document.createElement('div');
+    card.className = 'result-row';
+
+    if (!oid) {
+      card.innerHTML = `
+        <span class="result-error">无法识别 oid：${escapeHtml(line)}</span>
+      `;
+      resultsEl.appendChild(card);
+      continue;
+    }
+
+    card.innerHTML = `
+      <span class="result-oid">${escapeHtml(oid)}</span>
+      <span class="result-error">查询中...</span>
+    `;
+    resultsEl.appendChild(card);
+
+    try {
+      const data = await resolveOne(oid);
+      const targetUrl = data.targetUrl || '';
+      const phone = data.phone || '';
+
+      // 根据用户示例，完整链接格式拼接为：手机号----长链接
+      const fullLink = phone && targetUrl ? `${phone}----${targetUrl}` : targetUrl;
+
+      // 将完整的链接保存进数组，用于“复制全部”
+      if (fullLink) resolvedUrls.push(fullLink);
+
+      card.innerHTML = `
+        <span class="result-oid">${escapeHtml(oid)}</span>
+        <span class="result-phone">${escapeHtml(phone)}</span>
+        <span class="result-url" title="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</span>
+        <button class="btn-copy-sm" data-copy="${escapeHtml(fullLink)}">复制完整链接</button>
+      `;
+    } catch (err) {
+      card.innerHTML = `
+        <span class="result-oid">${escapeHtml(oid)}</span>
+        <span class="result-error">还原失败：${escapeHtml(err.message)}</span>
+      `;
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = '开始还原';
+  bindCopyButtons();
+}
+
+function bindCopyButtons() {
+  document.querySelectorAll('#results [data-copy]').forEach(node => {
+    node.onclick = () => {
+      const txt = node.getAttribute('data-copy');
+      if (txt) copyText(txt, node);
+    };
+  });
+}
+
+function copyAllResults(btn) {
+  if (!resolvedUrls.length) {
+    alert('暂无可复制的原始链接');
+    return;
+  }
+  copyText(resolvedUrls.join('\n'), btn, '原始链接已全部复制 ✓');
+}
+
+function clearAll() {
+  document.getElementById('input').value = '';
+  document.getElementById('results').innerHTML = '<div class="empty-tip">等待还原...</div>';
+  resolvedUrls = [];
+}
+
+function copyText(text, btn, successMsg) {
+  const done = () => {
+    const old = btn.textContent;
+    btn.textContent = successMsg || '已复制 ✓';
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  };
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.top = '-1000px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done && done(); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+</script>
+</body>
+</html>
