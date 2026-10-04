@@ -550,6 +550,7 @@ function hideAuthAndInit() {
 const ORDER_API = 'https://www.oo55426.xyz/api/order';
 const STORAGE_KEY = 'admin_order_history';
 const RELEASE_ACTION = 'release';
+const CONCURRENCY_LIMIT = 10; // ★ 每批并发数：一次同时发 10 条，避免被服务器限流
 
 let generatedOrders = [];
 let appInited = false;
@@ -836,7 +837,7 @@ function clearHistory() {
   }
 }
 
-// ==================== 批量生成短码 ====================
+// ==================== 批量生成短码（并发版） ====================
 async function parseOrders() {
   const raw = document.getElementById('input').value.trim();
   const lines = raw.split('\n').map(l => l.trim()).filter(l => l.includes('----'));
@@ -854,15 +855,16 @@ async function parseOrders() {
   }
 
   btn.disabled = true;
-  btn.textContent = '正在批量分配短码...';
+  btn.textContent = `正在批量分配短码... (0/${lines.length})`;
 
-  // ★ 关键改动：不再拼接 index.html，直接以目录路径结尾
+  // 不再拼接 index.html，直接以目录路径结尾
   //   例如 admin.html 在根目录 → https://oo55426.pages.dev/
   //        在 /admin/ 目录 → https://xxx.com/admin/
   const dirPath = location.pathname.replace(/[^/]*$/, '');
   const baseUrl = `${location.origin}${dirPath}`;
 
-  for (const line of lines) {
+  // ★ 关键改动：把每一行包成一个独立的任务函数
+  const tasks = lines.map(line => async () => {
     const idx = line.indexOf('----');
     const rawPhone = line.slice(0, idx).trim();
     const targetUrl = line.slice(idx + 4).trim();
@@ -878,13 +880,26 @@ async function parseOrders() {
       if (!res.ok) throw new Error(data.error || '创建短码失败');
 
       const userLink = `${baseUrl}?oid=${data.oid}`;
-      generatedOrders.push({
+      return {
         phone, targetUrl, userLink,
         oid: data.oid, createdAt: Date.now(), released: false
-      });
+      };
     } catch (err) {
-      generatedOrders.push({ phone, error: err.message });
+      return { phone, error: err.message };
     }
+  });
+
+  // ★ 分批并发执行：每批 CONCURRENCY_LIMIT 条同时发出去
+  generatedOrders = [];
+  let done = 0;
+  for (let i = 0; i < tasks.length; i += CONCURRENCY_LIMIT) {
+    const batch = tasks.slice(i, i + CONCURRENCY_LIMIT);
+    const results = await Promise.all(batch.map(fn => fn()));
+    generatedOrders.push(...results);
+    done += results.length;
+    btn.textContent = `正在批量分配短码... (${done}/${lines.length})`;
+    // 实时刷新结果，让用户看到进度
+    renderCurrentOrders();
   }
 
   const history = getHistory();
