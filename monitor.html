@@ -42,35 +42,18 @@
     gap: 12px;
     flex-wrap: wrap;
   }
-  .token-bar .token-label {
-    font-size: 13px;
-    color: #666;
-    font-weight: 500;
-  }
-  .token-bar .token-tip {
-    font-size: 12px;
-    color: #aaa;
-    margin-left: auto;
-  }
+  .token-bar .token-label { font-size: 13px; color: #666; font-weight: 500; }
+  .token-bar .token-tip { font-size: 12px; color: #aaa; margin-left: auto; }
   .chip-token {
-    font-size: 16px;
-    font-weight: 700;
-    color: #0f9d58;
-    background: #e9f7ef;
-    border-color: #a8ddc0;
-    letter-spacing: 1px;
+    font-size: 16px; font-weight: 700; color: #0f9d58;
+    background: #e9f7ef; border-color: #a8ddc0; letter-spacing: 1px;
     padding: 6px 14px;
   }
   .chip-token:hover { background: #d6f0e0; border-color: #0f9d58; }
 
   button.btn {
-    padding: 7px 14px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    transition: background .2s;
+    padding: 7px 14px; border: none; border-radius: 6px;
+    cursor: pointer; font-size: 13px; font-weight: 500; transition: background .2s;
   }
   .btn-primary { background: #1a73e8; color: #fff; }
   .btn-primary:hover { background: #1558b0; }
@@ -83,69 +66,64 @@
 
   /* 批量添加抽屉/区域 */
   #admin-section {
-    display: none;
-    background: #fff;
-    border-radius: 10px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    display: none; background: #fff; border-radius: 10px;
+    padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   }
   #admin-section textarea {
-    width: 100%;
-    height: 120px;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    font-family: monospace;
-    font-size: 13px;
-    margin-top: 10px;
+    width: 100%; height: 120px; padding: 10px; border: 1px solid #ccc;
+    border-radius: 6px; font-family: monospace; font-size: 13px; margin-top: 10px;
   }
 
   /* 搜索与过滤 */
   .search-input {
-    padding: 7px 12px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    font-size: 13px;
-    width: 220px;
-    outline: none;
+    padding: 7px 12px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 13px; width: 220px; outline: none;
   }
 
-  /* ===== 横向一行一行的列表布局 ===== */
+  /* ===== 核心：网格卡片布局，一页放多个 ===== */
   #cards-container {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
   }
 
-  .row-item {
+  .card-item {
     background: #fff;
     border-radius: 10px;
-    padding: 12px 16px;
+    padding: 14px 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     border-left: 4px solid #1a73e8;
     display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+    transition: box-shadow .2s;
   }
-  .row-item.has-code {
+  .card-item:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  .card-item.has-code {
     border-left-color: #34a853;
     background: #fafffb;
   }
 
-  /* 号码区：前缀和号码分开 */
+  /* 卡片头部：手机号 */
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
   .phone-group {
     display: flex;
     align-items: center;
     gap: 6px;
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .chip {
     font-family: ui-monospace, Menlo, Consolas, monospace;
     cursor: pointer;
     border-radius: 6px;
-    padding: 5px 10px;
+    padding: 4px 8px;
     border: 1px dashed #cfd8e3;
     transition: background .15s, border-color .15s, transform .1s;
     user-select: all;
@@ -153,137 +131,104 @@
   }
   .chip:active { transform: scale(0.96); }
   .chip-prefix {
-    font-size: 14px;
-    font-weight: 700;
-    color: #1a73e8;
-    background: #eef3fe;
-    border-color: #b9cdf5;
+    font-size: 13px; font-weight: 700; color: #1a73e8;
+    background: #eef3fe; border-color: #b9cdf5;
   }
   .chip-number {
-    font-size: 17px;
-    font-weight: 700;
-    color: #222;
-    letter-spacing: 1px;
-    background: #f7f8fa;
+    font-size: 15px; font-weight: 700; color: #222;
+    letter-spacing: 1px; background: #f7f8fa;
+    overflow: hidden; text-overflow: ellipsis;
   }
   .chip:hover { background: #dbe7fd; border-color: #1a73e8; }
 
   .mini-btn {
-    border: none;
-    background: #eef1f5;
-    color: #555;
-    font-size: 12px;
-    padding: 4px 8px;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background .15s;
-    white-space: nowrap;
+    border: none; background: #eef1f5; color: #555;
+    font-size: 12px; padding: 4px 8px; border-radius: 5px;
+    cursor: pointer; transition: background .15s; white-space: nowrap;
   }
   .mini-btn:hover { background: #e0e5ec; }
   .mini-btn.primary { background: #1a73e8; color: #fff; }
   .mini-btn.primary:hover { background: #1558b0; }
 
-  /* 验证码区 */
+  /* 卡片主体：验证码展示区 */
+  .card-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #f8f9fa;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid #edf0f5;
+  }
   .code-group {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex: 0 0 auto;
-    min-width: 160px;
   }
   .big-code {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: bold;
     color: #1a73e8;
     letter-spacing: 2px;
     font-family: ui-monospace, Menlo, Consolas, monospace;
   }
+  .big-code.empty-code { color: #ccc; letter-spacing: 3px; font-size: 20px; }
 
-  /* 短信内容 */
-  .sms-text {
-    flex: 1 1 240px;
-    min-width: 160px;
-    font-size: 13px;
-    color: #555;
-    line-height: 1.4;
-    max-height: 44px;
-    overflow-y: auto;
-    word-break: break-all;
-  }
-
-  /* 右侧状态 */
-  .row-meta {
+  /* 卡片底部：状态栏 */
+  .card-footer {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: space-between;
     font-size: 11px;
     color: #999;
-    flex: 0 0 auto;
   }
-  .row-meta a { color: #1a73e8; text-decoration: none; }
-  .row-meta a:hover { text-decoration: underline; }
+  .card-footer-left { display: flex; align-items: center; gap: 8px; }
+  .card-footer a { color: #1a73e8; text-decoration: none; }
+  .card-footer a:hover { text-decoration: underline; }
 
   .badge {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    background: #f1f3f5;
-    color: #666;
-    white-space: nowrap;
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: #f1f3f5; color: #666; white-space: nowrap;
   }
   .badge.active { background: #e6f4ea; color: #137333; }
   .badge.empty { background: #fef7e0; color: #b06000; }
 
   .empty-tip {
-    text-align: center;
-    padding: 40px;
-    color: #999;
-    background: #fff;
-    border-radius: 10px;
+    grid-column: 1 / -1;
+    text-align: center; padding: 40px; color: #999;
+    background: #fff; border-radius: 10px;
   }
 
   /* 复制提示 */
   #toast {
-    position: fixed;
-    left: 50%;
-    bottom: 40px;
+    position: fixed; left: 50%; bottom: 40px;
     transform: translateX(-50%) translateY(20px);
-    background: rgba(0,0,0,.8);
-    color: #fff;
-    padding: 8px 18px;
-    border-radius: 20px;
-    font-size: 13px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity .25s, transform .25s;
-    z-index: 99999;
+    background: rgba(0,0,0,.8); color: #fff; padding: 8px 18px;
+    border-radius: 20px; font-size: 13px; opacity: 0;
+    pointer-events: none; transition: opacity .25s, transform .25s; z-index: 99999;
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-  @media (max-width: 720px) {
-    .row-item { align-items: flex-start; }
-    .sms-text { flex: 1 1 100%; }
-    .row-meta { flex: 1 1 100%; justify-content: flex-start; }
-    .token-bar .token-tip { margin-left: 0; }
+  @media (max-width: 600px) {
+    #cards-container { grid-template-columns: 1fr; }
+    .search-input { width: 100%; }
   }
 </style>
 </head>
 <body>
 
-<!-- 页面顶部操作条 -->
 <div class="top-bar">
   <div>
     <span class="title">短信统一监控面板</span>
     <span id="account-stat" style="font-size: 13px; color: #666; margin-left: 10px;">共 0 个号码</span>
   </div>
   <div class="actions">
-    <input type="text" class="search-input" id="search-box" placeholder="搜索手机号或短信内容..." oninput="handleSearch()" />
+    <input type="text" class="search-input" id="search-box" placeholder="搜索手机号或验证码..." oninput="handleSearch()" />
     <button class="btn btn-primary" onclick="toggleAdminPanel()">配置账号池</button>
     <button class="btn btn-success" onclick="refreshAllImmediately()">立即刷新全部</button>
   </div>
 </div>
 
-<!-- ===== 顶部固定口令（点击即复制） ===== -->
 <div class="token-bar" id="token-bar">
   <span class="token-label">口令</span>
   <span class="chip chip-token" data-copy="xunyou456" title="点击复制 xunyou456">xunyou456</span>
@@ -292,7 +237,6 @@
   <span class="token-tip">点击口令即可复制</span>
 </div>
 
-<!-- 管理员配置面板（支持批量导入） -->
 <div id="admin-section">
   <h4>批量导入已注册好的账号接码链接</h4>
   <p style="font-size: 12px; color: #666; margin-top: 4px;">格式：手机号----接码API链接（每行一条，例如兼容 sms8、四方等任何接口）</p>
@@ -304,68 +248,51 @@
   </div>
 </div>
 
-<!-- 账号状态与短信行列表 -->
+<!-- 账号卡片网格容器 -->
 <div id="cards-container"></div>
 
-<!-- 复制提示 -->
 <div id="toast"></div>
 
 <script>
 // ==================== 配置与存储键名 ====================
 const STORAGE_ACCOUNTS_KEY = 'global_registered_accounts';
 const PROXY_BASE = 'https://www.oo55426.xyz/api/proxy?target=';
-
-// ★★★ 轮询间隔：改成 1000ms（1秒） ★★★
-const POLL_INTERVAL = 1000;
-
-// ★★★ 单次请求超时时间，防止慢请求把整轮轮询拖死 ★★★
-const REQUEST_TIMEOUT = 8000;
-
-// ★★★ 每轮最大并发数，账号很多时避免浏览器/接口被打爆 ★★★
-const MAX_CONCURRENCY = 12;
+const POLL_INTERVAL = 1000;       // 1秒轮询
+const REQUEST_TIMEOUT = 8000;     // 单请求超时
+const MAX_CONCURRENCY = 12;       // 最大并发数
 
 let accounts = [];
 let pollTimer = null;
-let isPolling = false;      // 防重入锁
-let lastRenderSig = '';     // 渲染签名，数据没变就不重绘（避免 1 秒闪一次、滚动条重置）
+let isPolling = false;
+let lastRenderSig = '';
 
-// ==================== 号码拆分（只识别 852 前缀，其他不拆分） ====================
+// ==================== 号码拆分（只识别 852 前缀） ====================
 function splitPhone(phone) {
   let s = String(phone || '').trim();
   if (!s) return { prefix: '', number: '' };
-
   const hasPlus = s.startsWith('+');
   let digits = s.replace(/[^\d]/g, '');
   if (!digits) return { prefix: '', number: '' };
-
   if (digits.startsWith('852') && digits.length > 8) {
-    const number = digits.slice(3);
-    return { prefix: hasPlus ? '+852' : '852', number };
+    return { prefix: hasPlus ? '+852' : '852', number: digits.slice(3) };
   }
-
   return { prefix: '', number: digits };
 }
 
-// ==================== 从短信内容中提取纯数字验证码 ====================
+// ==================== 提取纯数字验证码 ====================
 function extractNumericCode(text) {
   if (!text) return '';
   const str = String(text);
-
   let m = str.match(/(?:验证码|校验码|动态码|code)[^\d]{0,8}(\d{4,8})/i);
   if (m) return m[1];
-
   m = str.match(/[【\[](\d{4,8})[】\]]/);
   if (m) return m[1];
-
   const matches = str.match(/\b\d{4,8}\b/g);
   if (matches) {
     for (const num of matches) {
-      if (!/^(19|20)\d{2}$/.test(num)) {
-        return num;
-      }
+      if (!/^(19|20)\d{2}$/.test(num)) return num;
     }
   }
-
   return '';
 }
 
@@ -379,55 +306,40 @@ function parseSmsPayload(raw) {
   try {
     const obj = JSON.parse(raw);
     if (!obj.data) return { code: '', content: '' };
-
     if (Array.isArray(obj.data) && obj.data.length > 0) {
       const first = obj.data[0];
       const text = typeof first === 'string' ? first : (first.sms || first.content || first.message || JSON.stringify(first));
-      const code = extractNumericCode(text);
-      return { code, content: text, time: first.time || '' };
+      return { code: extractNumericCode(text), content: text, time: first.time || '' };
     }
-
     if (typeof obj.data === 'object') {
       const rawCode = obj.data.code ? String(obj.data.code).trim() : '';
       const content = obj.data.sms || obj.data.content || (rawCode ? `【短信验证码】${rawCode}` : '');
-
-      let code = '';
-      if (/^\d+$/.test(rawCode)) {
-        code = rawCode;
-      } else {
-        code = extractNumericCode(content);
-      }
+      let code = /^\d+$/.test(rawCode) ? rawCode : extractNumericCode(content);
       if (!code && isPending(obj.msg)) return { code: '', content: '' };
-
       return { code, content, time: obj.data.code_time || obj.data.time || '' };
     }
-
     if (typeof obj.data === 'string' && !isPending(obj.data)) {
       return { code: extractNumericCode(obj.data), content: obj.data };
     }
   } catch (e) {
-    if (!isPending(raw)) {
-      return { code: extractNumericCode(raw), content: raw };
-    }
+    if (!isPending(raw)) return { code: extractNumericCode(raw), content: raw };
   }
   return { code: '', content: '' };
 }
 
-// ==================== 轮询请求 ====================
+// ==================== 请求与轮询 ====================
 async function checkSingleAccount(acc) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT);
-
   try {
     const url = `${PROXY_BASE}${encodeURIComponent(acc.targetUrl)}`;
     const res = await fetch(url, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
     if (!res.ok) throw new Error('网络错误');
     const text = await res.text();
     const parsed = parseSmsPayload(text);
-
     if (parsed.code || parsed.content) {
       acc.lastCode = parsed.code;
-      acc.lastContent = parsed.content;
+      acc.lastContent = parsed.content; // 保留在内存中用于提取，但不渲染
       acc.lastTime = parsed.time || new Date().toLocaleTimeString();
       acc.status = 'active';
     } else {
@@ -440,7 +352,6 @@ async function checkSingleAccount(acc) {
   }
 }
 
-// 并发池：最多同时发 MAX_CONCURRENCY 个请求
 async function runWithConcurrency(tasks, limit) {
   const queue = tasks.slice();
   const workers = new Array(Math.min(limit, queue.length)).fill(0).map(async () => {
@@ -453,16 +364,11 @@ async function runWithConcurrency(tasks, limit) {
 }
 
 async function pollAllAccounts(force = false) {
-  // 防重入：上一轮没跑完（或超过 1 秒）就跳过本轮，避免请求堆积
   if (isPolling && !force) return;
   if (!accounts.length) return;
-
   isPolling = true;
   try {
-    await runWithConcurrency(
-      accounts.map(acc => () => checkSingleAccount(acc)),
-      MAX_CONCURRENCY
-    );
+    await runWithConcurrency(accounts.map(acc => () => checkSingleAccount(acc)), MAX_CONCURRENCY);
     renderCards(document.getElementById('search-box').value);
   } finally {
     isPolling = false;
@@ -471,9 +377,7 @@ async function pollAllAccounts(force = false) {
 
 // ==================== 界面渲染 ====================
 function buildSignature(list, kw) {
-  return kw + '||' + list.map(a =>
-    `${a.id}|${a.status}|${a.lastCode}|${a.lastContent}|${a.lastTime}`
-  ).join('~');
+  return kw + '||' + list.map(a => `${a.id}|${a.status}|${a.lastCode}|${a.lastTime}`).join('~');
 }
 
 function renderCards(filterKeyword = '', forceRender = false) {
@@ -488,14 +392,13 @@ function renderCards(filterKeyword = '', forceRender = false) {
            (a.lastCode && String(a.lastCode).toLowerCase().includes(kw));
   });
 
-  // 数据没变就不重绘，避免 1 秒一次 innerHTML 全量重建导致闪烁/滚动条归零
   const sig = buildSignature(list, kw);
   if (!forceRender && sig === lastRenderSig && container.innerHTML.trim() !== '') return;
   lastRenderSig = sig;
 
   if (!list.length) {
     container.innerHTML = `<div class="empty-tip">${
-      accounts.length === 0 ? '暂无账号，请点击右上角【配置账号池】批量导入' : '未搜到相关手机号或短信'
+      accounts.length === 0 ? '暂无账号，请点击右上角【配置账号池】批量导入' : '未搜到相关手机号或验证码'
     }</div>`;
     return;
   }
@@ -503,31 +406,32 @@ function renderCards(filterKeyword = '', forceRender = false) {
   container.innerHTML = list.map(item => {
     const { prefix, number } = splitPhone(item.phone);
     const fullPhone = prefix + number;
-
     let numericCode = extractNumericCode(item.lastContent);
-    if (!numericCode && item.lastCode && /^\d+$/.test(item.lastCode)) {
-      numericCode = item.lastCode;
-    }
+    if (!numericCode && item.lastCode && /^\d+$/.test(item.lastCode)) numericCode = item.lastCode;
     const hasCode = !!numericCode;
 
     return `
-      <div class="row-item ${hasCode ? 'has-code' : ''}">
-        <div class="phone-group">
-          ${prefix ? `<span class="chip chip-prefix" data-copy="${escapeHtml(prefix)}" title="点击复制 ${escapeHtml(prefix)}">${escapeHtml(prefix)}</span>` : ''}
-          <span class="chip chip-number" data-copy="${escapeHtml(number)}" title="点击复制 ${escapeHtml(number)}">${escapeHtml(number)}</span>
+      <div class="card-item ${hasCode ? 'has-code' : ''}">
+        <div class="card-header">
+          <div class="phone-group">
+            ${prefix ? `<span class="chip chip-prefix" data-copy="${escapeHtml(prefix)}" title="复制前缀">${escapeHtml(prefix)}</span>` : ''}
+            <span class="chip chip-number" data-copy="${escapeHtml(number)}" title="复制号码">${escapeHtml(number)}</span>
+          </div>
           <button class="mini-btn" data-copy="${escapeHtml(fullPhone)}" title="复制完整号码">全号</button>
         </div>
 
-        <div class="code-group">
-          <span class="big-code">${hasCode ? escapeHtml(numericCode) : '------'}</span>
+        <div class="card-body">
+          <div class="code-group">
+            <span class="big-code ${hasCode ? '' : 'empty-code'}">${hasCode ? escapeHtml(numericCode) : '------'}</span>
+          </div>
           ${hasCode ? `<button class="mini-btn primary" data-copy="${escapeHtml(numericCode)}">复制</button>` : ''}
         </div>
 
-        <div class="sms-text">${item.lastContent ? escapeHtml(item.lastContent) : '<span style="color:#aaa;">暂无短信内容...</span>'}</div>
-
-        <div class="row-meta">
-          <span class="badge ${hasCode ? 'active' : 'empty'}">${hasCode ? '已收到' : (item.status === 'error' ? '请求失败' : '等待接收')}</span>
-          <span>${item.lastTime || '未同步'}</span>
+        <div class="card-footer">
+          <div class="card-footer-left">
+            <span class="badge ${hasCode ? 'active' : 'empty'}">${hasCode ? '已收到' : (item.status === 'error' ? '请求失败' : '等待接收')}</span>
+            <span>${item.lastTime || '未同步'}</span>
+          </div>
           <a href="${escapeHtml(item.targetUrl)}" target="_blank" rel="noopener">原始接口</a>
         </div>
       </div>
@@ -535,14 +439,13 @@ function renderCards(filterKeyword = '', forceRender = false) {
   }).join('');
 }
 
-// 事件委托：所有带 data-copy 的元素点击即复制
+// 事件委托
 document.getElementById('cards-container').addEventListener('click', function (e) {
   const el = e.target.closest('[data-copy]');
   if (!el) return;
   copyText(el.getAttribute('data-copy'));
 });
 
-// 顶部口令栏点击复制（写死的口令）
 document.getElementById('token-bar').addEventListener('click', function (e) {
   const el = e.target.closest('[data-copy]');
   if (!el) return;
@@ -557,9 +460,7 @@ function handleSearch() {
 function copyText(txt) {
   const text = String(txt == null ? '' : txt);
   if (!text) return;
-
   const done = () => showToast('已复制：' + text);
-
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
   } else {
@@ -569,26 +470,16 @@ function copyText(txt) {
 
 function fallbackCopy(text, cb) {
   const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.top = '-1000px';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  try {
-    document.execCommand('copy');
-    cb && cb();
-  } catch (e) {
-    alert('复制失败，请手动复制：' + text);
-  }
+  ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); cb && cb(); } catch (e) { alert('复制失败：' + text); }
   document.body.removeChild(ta);
 }
 
 let toastTimer = null;
 function showToast(msg) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
+  t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
 }
@@ -597,7 +488,7 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
-// ==================== 账号批量保存与维护 ====================
+// ==================== 账号维护 ====================
 function toggleAdminPanel() {
   const p = document.getElementById('admin-section');
   p.style.display = p.style.display === 'block' ? 'none' : 'block';
@@ -606,26 +497,18 @@ function toggleAdminPanel() {
 function saveImportAccounts() {
   const raw = document.getElementById('import-input').value.trim();
   const lines = raw.split('\n').map(l => l.trim()).filter(l => l.includes('----'));
+  if (!lines.length) { alert('未解析到格式正确的记录 (手机号----链接)'); return; }
 
-  if (!lines.length) {
-    alert('未解析到格式正确的记录 (手机号----链接)');
-    return;
-  }
-
-  const newAccounts = lines.map((line, idx) => {
+  accounts = lines.map((line, idx) => {
     const p = line.indexOf('----');
     return {
       id: Date.now() + '_' + idx,
       phone: line.slice(0, p).trim(),
       targetUrl: line.slice(p + 4).trim(),
-      lastCode: '',
-      lastContent: '',
-      lastTime: '',
-      status: 'waiting'
+      lastCode: '', lastContent: '', lastTime: '', status: 'waiting'
     };
   });
 
-  accounts = newAccounts;
   localStorage.setItem(STORAGE_ACCOUNTS_KEY, JSON.stringify(accounts));
   document.getElementById('import-input').value = '';
   toggleAdminPanel();
@@ -643,20 +526,13 @@ function clearAllAccounts() {
   }
 }
 
-function refreshAllImmediately() {
-  pollAllAccounts(true);
-}
+function refreshAllImmediately() { pollAllAccounts(true); }
 
 // ==================== 初始化 ====================
 function initApp() {
-  try {
-    accounts = JSON.parse(localStorage.getItem(STORAGE_ACCOUNTS_KEY)) || [];
-  } catch (e) {
-    accounts = [];
-  }
+  try { accounts = JSON.parse(localStorage.getItem(STORAGE_ACCOUNTS_KEY)) || []; } catch (e) { accounts = []; }
   renderCards('', true);
   pollAllAccounts(true);
-
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(pollAllAccounts, POLL_INTERVAL);
 }
