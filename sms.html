@@ -299,14 +299,14 @@
 </head>
 <body class="gate-open">
 
-<div class="gate" id="gate">
+<div class="gate" id="gate" style="display: none;">
   <div class="gate-card">
     <div class="gate-icon">📖</div>
     <div class="gate-title">取号前请先阅读完整教程</div>
     <div class="gate-sub">未阅读教程直接取号，极易导致登录失败或验证码作废<br>请务必按步骤操作</div>
 
     <div class="gate-steps">
-      <div class="gate-step"><span class="num">1</span><span>打开支付宝，在登录页把区号切换为 <b>美国 (+1)</b>。</span></div>
+      <div class="gate-step"><span class="num">1</span><span>打开支付宝，在登录页把区号切换为 <b>中国香港 (+852)</b>。</span></div>
       <div class="gate-step"><span class="num">2</span><span>输入下方账号密码登录，密码登录失败可改用 <b>验证码登录</b>，本页会实时显示验证码。</span></div>
       <div class="gate-step"><span class="num">3</span><span>登录成功后去 <b>兑换口令</b> 激活并使用。</span></div>
       <div class="gate-step"><span class="num">4</span><span>不退支付宝，<b>质保一天</b>，可更换设备登录。</span></div>
@@ -336,7 +336,7 @@
       【重要提示】登录支付宝扫码登录迅游加速器
     </div>
     <div class="notice-desc">
-      使用下方账号密码登录手机支付宝<span class="highlight">记得把区号修改成美国+1</span>然后选择密码登录，如果密码登录失败可以选择短信登录，下方会显示验证码。
+      使用下方账号密码登录手机支付宝<span class="highlight">记得把区号修改成中国香港+852</span>然后选择密码登录，如果密码登录失败可以选择短信登录，下方会显示验证码。
     </div>
   </div>
 
@@ -365,7 +365,7 @@
 
     <div class="login-guide">
       <strong>操作步骤：</strong><br>
-      1. 打开手机支付宝，区号选择 <strong>美国 (+1)</strong>；<br>
+      1. 打开手机支付宝，区号选择 <strong>中国香港 (+852)</strong>；<br>
       2. 粘贴上方账号密码，点击登录；<br>
       3. 如果密码登录失败，请选择<strong>短信登录</strong>；<br>
       4. 下方会实时显示收到的验证码，填入即可。
@@ -377,11 +377,10 @@
         <line x1="12" y1="9" x2="12" y2="13"></line>
         <line x1="12" y1="17" x2="12.01" y2="17"></line>
       </svg>
-      <span>耐心等待90秒，没收到再获取验证，美国卡来码比较慢</span>
+      <span>耐心等待90秒，没收到再获取验证，港卡来码比较慢</span>
     </div>
   </div>
 
-  <!-- 24 小时有效期横幅 -->
   <div class="expire-bar" id="expire-bar">
     <span>⏳ 本链接有效期剩余</span>
     <span class="expire-time" id="expire-time">24:00:00</span>
@@ -430,19 +429,9 @@ let claimed = false;
 let expireTimer = null;
 let expireAt = 0;
 
-// ==================== 美国号码格式化 ====================
-// 去掉 +1 国家码 / 连字符，只保留 10 位本地号码
-// 例：1-6136558949 → 6136558949
-function formatPhone(p) {
-  let digits = String(p || '').replace(/\D/g, '');
-  if (!digits) return '';
-  if (digits.length === 11 && digits.charAt(0) === '1') digits = digits.slice(1);
-  return digits;
-}
-
-// ==================== 取号缓存（防刷新丢失，只缓存账号信息）====================
+// ==================== 取号缓存（本地兜底，不作为唯一判断）====================
 const CLAIM_CACHE_PREFIX = 'sms_claimed_';
-const CLAIM_CACHE_TTL = 30 * 60 * 1000; // 30 分钟，只是本地加速
+const CLAIM_CACHE_TTL = 30 * 60 * 1000;
 
 function saveClaimCache() {
   if (!currentOid) return;
@@ -539,7 +528,7 @@ function parseMessages(raw) {
 
 // ==================== 账号渲染 / 复制 ====================
 function renderAccount() {
-  let displayPhone = formatPhone(currentPhone);
+  let displayPhone = (currentPhone || '').replace(/^\+?852/, '');
   if (!displayPhone) displayPhone = '加载中...';
   acctPhoneEl.textContent = displayPhone;
 
@@ -555,7 +544,7 @@ function renderAccount() {
 }
 
 function copyAccount(btn) {
-  let displayPhone = formatPhone(currentPhone);
+  let displayPhone = (currentPhone || '').replace(/^\+?852/, '');
   let text = displayPhone;
   if (currentPassword) text += '----' + currentPassword;
   if (!text || text === '加载中...') return;
@@ -672,7 +661,6 @@ function tickExpire() {
     String(m).padStart(2, '0') + ':' +
     String(s).padStart(2, '0');
 
-  // 剩余不足 1 小时变红
   if (remaining < 3600000) {
     expireBarEl.classList.add('urgent');
   } else {
@@ -702,16 +690,11 @@ function showExpired() {
   }
 }
 
-// 从服务端同步 expireAt（用于刷新 / 换设备时拿到同一时间点）
+// ★ 修改：改为 GET 请求，安全获取服务端计算的过期时间
 async function syncExpireFromServer() {
   if (!currentOid) return;
   try {
-    const res = await fetch(ORDER_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'claim', oid: currentOid })
-    });
-
+    const res = await fetch(`${ORDER_API}?oid=${encodeURIComponent(currentOid)}`, { cache: 'no-store' });
     if (res.status === 404) {
       showExpired();
       return;
@@ -722,9 +705,7 @@ async function syncExpireFromServer() {
     if (data.expireAt) {
       startExpireCountdown(data.expireAt);
     }
-  } catch (e) {
-    // 网络异常忽略，下次可重试
-  }
+  } catch (e) {}
 }
 
 // ==================== 渲染消息 ====================
@@ -790,8 +771,6 @@ function escapeHtml(s) {
 // ==================== 轮询 ====================
 async function poll() {
   if (!apiUrl || !claimed) return;
-
-  // 若已过期就不要再拉
   if (expireAt && Date.now() >= expireAt) return;
 
   try {
@@ -864,7 +843,7 @@ async function handleClaim() {
     statusEl.textContent = '已连接';
     statusEl.className = 'status';
 
-    // 启动 24 小时倒计时（服务端返回的 expireAt 是首次取号时定的，刷新/换设备不会变）
+    // 启动 24 小时倒计时（服务端返回的 expireAt）
     if (data.expireAt) {
       startExpireCountdown(data.expireAt);
     }
@@ -879,7 +858,7 @@ async function handleClaim() {
   }
 }
 
-// ==================== 初始化 ====================
+// ==================== 初始化（核心全局同步逻辑） ====================
 async function boot() {
   const params = new URLSearchParams(location.search);
   currentOid = params.get('oid') || '';
@@ -887,23 +866,7 @@ async function boot() {
   const urlPassword = params.get('password') || params.get('pwd') || params.get('pass') || '';
   const urlApiUrl   = params.get('url') || '';
 
-  // 1) 有本地缓存：直接进主界面，并从服务端同步 expireAt（不重置）
-  const cached = loadClaimCache();
-  if (cached && cached.phone) {
-    currentPhone    = cached.phone || '';
-    currentPassword = cached.password || '';
-    apiUrl          = cached.apiUrl || '';
-    renderAccount();
-    showMain();
-    claimed = true;
-    statusEl.textContent = '已连接';
-    statusEl.className = 'status';
-    if (apiUrl) startPolling();
-    syncExpireFromServer();
-    return;
-  }
-
-  // 2) 老链：URL 里已带 phone + password
+  // 1. 老链接带参逻辑（直接进入）
   if (urlPhone && urlPassword) {
     currentPhone    = urlPhone;
     currentPassword = urlPassword;
@@ -932,7 +895,6 @@ async function boot() {
       statusEl.textContent = '已连接';
       statusEl.className = 'status';
       startPolling();
-      // 老链也从服务端同步 expireAt（如果后端有 KV）
       syncExpireFromServer();
     } else {
       statusEl.textContent = '缺少链接';
@@ -942,12 +904,72 @@ async function boot() {
     return;
   }
 
-  // 3) 新链：等待用户勾选并点击“开始取号”
   if (!currentOid) {
     gateCheck.disabled = true;
     gateBtn.disabled = true;
     gateTip.textContent = '链接不完整，请重新打开正确的取号链接';
+    return;
   }
+
+  // 2. 新链接：先向服务端请求该订单状态（全局同步核心）
+  try {
+    const res = await fetch(`${ORDER_API}?oid=${encodeURIComponent(currentOid)}`, { cache: 'no-store' });
+    
+    if (res.status === 404) {
+      gateCheck.disabled = true;
+      gateBtn.disabled = true;
+      gateTip.textContent = '订单不存在或已失效';
+      return;
+    }
+
+    if (res.ok) {
+      const data = await res.json();
+      
+      // ★ 核心：服务端返回 firstClaimAt > 0 说明已经在任何设备上取过号了
+      if (data.firstClaimAt > 0) {
+        currentPhone    = data.phone || '';
+        currentPassword = data.password || '';
+        apiUrl          = data.targetUrl || '';
+        
+        renderAccount();
+        showMain();
+        claimed = true;
+        statusEl.textContent = '已连接';
+        statusEl.className = 'status';
+        
+        if (apiUrl) {
+          startPolling();
+          // 启动倒计时 (使用服务端计算的 24h 过期时间)
+          if (data.expireAt) {
+            startExpireCountdown(data.expireAt);
+          }
+        }
+        
+        saveClaimCache();
+        return;
+      }
+    }
+  } catch (e) {
+    // 3. 网络异常兜底：尝试读取本地缓存
+    const cached = loadClaimCache();
+    if (cached && cached.phone) {
+      currentPhone    = cached.phone;
+      currentPassword = cached.password;
+      apiUrl          = cached.apiUrl;
+      renderAccount();
+      showMain();
+      claimed = true;
+      statusEl.textContent = '已连接';
+      statusEl.className = 'status';
+      if (apiUrl) startPolling();
+      syncExpireFromServer();
+      return;
+    }
+  }
+
+  // 4. 若服务端返回未取号，则显示教程弹窗等待用户操作
+  gateEl.style.display = 'flex';
+  document.body.classList.add('gate-open');
 }
 
 document.addEventListener('visibilitychange', () => {
