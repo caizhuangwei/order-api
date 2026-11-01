@@ -306,7 +306,7 @@
     <div class="gate-sub">未阅读教程直接取号，极易导致登录失败或验证码作废<br>请务必按步骤操作</div>
 
     <div class="gate-steps">
-      <div class="gate-step"><span class="num">1</span><span>打开支付宝，在登录页把区号切换为 <b>中国香港 (+852)</b>。</span></div>
+      <div class="gate-step"><span class="num">1</span><span>打开支付宝，在登录页把区号切换为 <b>美国 (+1)</b>。</span></div>
       <div class="gate-step"><span class="num">2</span><span>输入下方账号密码登录，密码登录失败可改用 <b>验证码登录</b>，本页会实时显示验证码。</span></div>
       <div class="gate-step"><span class="num">3</span><span>登录成功后去 <b>兑换口令</b> 激活并使用。</span></div>
       <div class="gate-step"><span class="num">4</span><span>不退支付宝，<b>质保一天</b>，可更换设备登录。</span></div>
@@ -336,7 +336,7 @@
       【重要提示】登录支付宝扫码登录迅游加速器
     </div>
     <div class="notice-desc">
-      使用下方账号密码登录手机支付宝<span class="highlight">记得把区号修改成中国香港+852</span>然后选择密码登录，如果密码登录失败可以选择短信登录，下方会显示验证码。
+      使用下方账号密码登录手机支付宝<span class="highlight">记得把区号修改成美国+1</span>然后选择密码登录，如果密码登录失败可以选择短信登录，下方会显示验证码。
     </div>
   </div>
 
@@ -365,7 +365,7 @@
 
     <div class="login-guide">
       <strong>操作步骤：</strong><br>
-      1. 打开手机支付宝，区号选择 <strong>中国香港 (+852)</strong>；<br>
+      1. 打开手机支付宝，区号选择 <strong>美国 (+1)</strong>；<br>
       2. 粘贴上方账号密码，点击登录；<br>
       3. 如果密码登录失败，请选择<strong>短信登录</strong>；<br>
       4. 下方会实时显示收到的验证码，填入即可。
@@ -377,11 +377,11 @@
         <line x1="12" y1="9" x2="12" y2="13"></line>
         <line x1="12" y1="17" x2="12.01" y2="17"></line>
       </svg>
-      <span>耐心等待90秒，没收到再获取验证，港卡来码比较慢</span>
+      <span>耐心等待90秒，没收到再获取验证，美国卡来码比较慢</span>
     </div>
   </div>
 
-  <!-- 24 小时有效期横幅（替代原来的 10 分钟倒计时） -->
+  <!-- 24 小时有效期横幅 -->
   <div class="expire-bar" id="expire-bar">
     <span>⏳ 本链接有效期剩余</span>
     <span class="expire-time" id="expire-time">24:00:00</span>
@@ -429,6 +429,16 @@ let claimed = false;
 // 24 小时有效期
 let expireTimer = null;
 let expireAt = 0;
+
+// ==================== 美国号码格式化 ====================
+// 去掉 +1 国家码 / 连字符，只保留 10 位本地号码
+// 例：1-6136558949 → 6136558949
+function formatPhone(p) {
+  let digits = String(p || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 11 && digits.charAt(0) === '1') digits = digits.slice(1);
+  return digits;
+}
 
 // ==================== 取号缓存（防刷新丢失，只缓存账号信息）====================
 const CLAIM_CACHE_PREFIX = 'sms_claimed_';
@@ -529,7 +539,7 @@ function parseMessages(raw) {
 
 // ==================== 账号渲染 / 复制 ====================
 function renderAccount() {
-  let displayPhone = (currentPhone || '').replace(/^\+?852/, '');
+  let displayPhone = formatPhone(currentPhone);
   if (!displayPhone) displayPhone = '加载中...';
   acctPhoneEl.textContent = displayPhone;
 
@@ -545,7 +555,7 @@ function renderAccount() {
 }
 
 function copyAccount(btn) {
-  let displayPhone = (currentPhone || '').replace(/^\+?852/, '');
+  let displayPhone = formatPhone(currentPhone);
   let text = displayPhone;
   if (currentPassword) text += '----' + currentPassword;
   if (!text || text === '加载中...') return;
@@ -703,7 +713,6 @@ async function syncExpireFromServer() {
     });
 
     if (res.status === 404) {
-      // 订单在 KV 里已过期
       showExpired();
       return;
     }
